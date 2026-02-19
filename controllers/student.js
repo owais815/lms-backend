@@ -134,7 +134,17 @@ exports.login = (req, res, next) => {
         { expiresIn: "1h" }
       );
 
-      res.status(200).json({ token: token, userId: loggedIn.id });
+      res.status(200).json({
+        token,
+        user: {
+          id: String(loggedIn.id),
+          email: loggedIn.email || null,
+          username: loggedIn.username,
+          role: { id: 'student', name: 'STUDENT', description: null, isSystem: true, isActive: true },
+          permissions: [],
+          isActive: true,
+        },
+      });
     })
 
     .catch((err) => {
