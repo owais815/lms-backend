@@ -15,7 +15,7 @@ const Announcements = require("../models/Announcements");
 const { Op, Sequelize } = require('sequelize');
 const Parent = require("../models/Parent");
 const UpcomingClass = require("../models/UpcomingClasses");
-const Rights = require("../models/Admin");
+const Rights = require("../models/RolesRights");
 const RolesRights = require("../models/RolesRights");
 
 exports.signup= (req,res,next)=>{
