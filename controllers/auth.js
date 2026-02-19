@@ -127,40 +127,60 @@ exports.addAdminRights= async (req,res,next)=>{
     }
 }
 
-exports.login = (req,res,next)=>{
+exports.login = (req, res, next) => {
     const username = req.body.username;
     const password = req.body.password;
     let loggedIn;
-    Admin.findOne({where:{username:username}})
-    
-    .then(user=>{
-        if(!user){
-            const error = new Error('User with this email not found.!');
-            error.statusCode = 401;
-            throw error;
-        }
-        loggedIn=user;
-        return bcrypt.compare(password,user.password);
-    })
-    .then(isEqual =>{
-        if(!isEqual){
-            const error = new Error('Password doen\'t match.');
-            error.statusCode = 401;
-            throw error;
-        }
-        const token = jwt.sign({
-            email:loggedIn.email,
-            userId:loggedIn.id.toString()
-        },"supersupersecretsecret",{expiresIn:'1h'});
 
-        res.status(200).json({token:token,userId:loggedIn.id});
-        
-    })
-    
-    .catch(err=>{
-        if(!err?.statusCode){
-            err.statusCode = 500;
-        }
-        next(err);
-    })
-}
+    Admin.findOne({ where: { username: username }, include: [{ model: Role, as: 'Role' }] })
+        .then(user => {
+            if (!user) {
+                const error = new Error('No account found with that username.');
+                error.statusCode = 401;
+                throw error;
+            }
+            loggedIn = user;
+            return bcrypt.compare(password, user.password);
+        })
+        .then(isEqual => {
+            if (!isEqual) {
+                const error = new Error('Incorrect password.');
+                error.statusCode = 401;
+                throw error;
+            }
+
+            const token = jwt.sign(
+                { userId: loggedIn.id.toString(), username: loggedIn.username },
+                'supersupersecretsecret',
+                { expiresIn: '1h' }
+            );
+
+            const role = loggedIn.Role
+                ? {
+                    id: String(loggedIn.Role.id),
+                    name: loggedIn.Role.role,
+                    description: null,
+                    isSystem: true,
+                    isActive: true,
+                }
+                : null;
+
+            res.status(200).json({
+                token,
+                user: {
+                    id: String(loggedIn.id),
+                    email: loggedIn.email || null,
+                    username: loggedIn.username,
+                    role,
+                    permissions: [],
+                    isActive: true,
+                },
+            });
+        })
+        .catch(err => {
+            if (!err?.statusCode) {
+                err.statusCode = 500;
+            }
+            next(err);
+        });
+};
