@@ -43,6 +43,12 @@ const sequelize = require("./utils/database");
 const multer = require("multer");
 const cors = require("cors");
 const app = express();
+
+// Ensure upload directory exists
+const resourcesDir = path.join(__dirname, "resources");
+if (!fs.existsSync(resourcesDir)) {
+  fs.mkdirSync(resourcesDir, { recursive: true });
+}
 const {
   Teacher,
   Student,
