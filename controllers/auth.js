@@ -174,6 +174,7 @@ exports.login = (req, res, next) => {
                     role,
                     permissions: [],
                     isActive: true,
+                    profileImg: loggedIn.profileImg || null,
                 },
             });
         })
