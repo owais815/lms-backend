@@ -97,6 +97,7 @@ exports.login = (req, res, next) => {
           role: { id: 'teacher', name: 'TEACHER', description: null, isSystem: true, isActive: true },
           permissions: [],
           isActive: true,
+          profileImg: loggedIn.profileImg || null,
         },
       });
     })
