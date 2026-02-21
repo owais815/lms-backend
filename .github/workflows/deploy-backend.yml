@@ -21,7 +21,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script: |
-            cd /root/lms-backend
+            cd /var/www/lms-backend
 
             # Pull latest code
             git pull origin main
@@ -29,8 +29,9 @@ jobs:
             # Install/update dependencies
             npm install --production
 
-            # Restart backend with PM2
-            pm2 restart lms-backend || pm2 start app.js --name lms-backend
+            # Restart backend with PM2 in production mode
+            export NODE_ENV=production
+            pm2 restart lms-backend --update-env || NODE_ENV=production pm2 start app.js --name lms-backend
 
             # Save PM2 configuration
             pm2 save

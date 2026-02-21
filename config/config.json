@@ -16,7 +16,7 @@
     "dialect": "mysql"
   },
   "production": {
-    "username": "root",
+    "username": "lmsuser",
     "password": "alisher.1",
     "database": "LMSystem",
     "host": "127.0.0.1",
