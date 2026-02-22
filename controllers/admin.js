@@ -58,6 +58,11 @@ exports.login = async (req, res, next) => {
         const adminCount = await Admin.count();
         
         if (adminCount === 0) {
+            if (process.env.ALLOW_AUTO_ADMIN_CREATION !== 'true') {
+                const error = new Error('Admin creation not permitted. Set ALLOW_AUTO_ADMIN_CREATION=true to enable first-run setup.');
+                error.statusCode = 403;
+                throw error;
+            }
             // If no admin exists, create one with the provided credentials
             const hashedPassword = await bcrypt.hash(password, 12);
             const newAdmin = await Admin.create({
@@ -97,46 +102,35 @@ exports.login = async (req, res, next) => {
         next(err);
     }
 };
-exports.update = (req, res, next) => {
-    const adminId = req.params.adminId; 
-    const updateFields = {};
-    
-    // Extract fields that can be updated from the request body
-    const { name, password } = req.body;
+exports.update = async (req, res, next) => {
+    try {
+        const adminId = req.params.adminId;
+        const updateFields = {};
 
-    // Add the update fields to the updateFields object if they are provided
-    if (name) {
-        updateFields.name = name;
+        const { name, password } = req.body;
+
+        if (name) {
+            updateFields.name = name;
+        }
+        if (password) {
+            updateFields.password = await bcrypt.hash(password, 12);
+        }
+
+        const admin = await Admin.findByPk(adminId);
+        if (!admin) {
+            const error = new Error('Admin not found.');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        const updatedAdmin = await admin.update(updateFields);
+        res.status(200).json({ message: 'Admin updated successfully.', admin: updatedAdmin });
+    } catch (err) {
+        if (!err.statusCode) {
+            err.statusCode = 500;
+        }
+        next(err);
     }
-    if (password) {
-        // Hash the new password before updating
-        bcrypt.hash(password, 12)
-            .then(hashPwd => {
-                updateFields.password = hashPwd;
-            });
-    }
-    // Find the Teacher record by ID and update the fields
-    Admin.findByPk(adminId)
-        .then(admin => {
-            if (!admin) {
-                const error = new Error('Admin not found.');
-                error.statusCode = 404;
-                throw error;
-            }
-            
-            // Update the Teacher record with the new field values
-            return admin.update(updateFields);
-        })
-        .then(updatedAdmin => {
-            // Return success response with the updated Teacher details
-            res.status(200).json({ message: 'Admin updated successfully.', admin: updatedAdmin });
-        })
-        .catch(err => {
-            if (!err.statusCode) {
-                err.statusCode = 500;
-            }
-            next(err);
-        });
 };
 //delete admin record on Id
 exports.delete = (req, res, next) => {
@@ -185,9 +179,8 @@ exports.getAllAdmins = (req, res, next) => {
 // get admin by Id
 exports.getAdminById = (req, res, next) => {
     const adminId = req.params.adminId;
-    console.log("admin id is:::",adminId);
     // Query the database to retrieve all Admin records
-    Admin.findByPk({where:{id:adminId}})
+    Admin.findByPk(adminId)
         .then(admin => {
             if (!admin) {
                 const error = new Error('admin not foundadfsa.');
@@ -209,7 +202,7 @@ exports.getAdminById = (req, res, next) => {
 exports.getAdminByUsername = (req, res, next) => {
     const {username} = req.body;
     // Query the database to retrieve all teacher records
-    Admin.findByPk({where:{username:username}})
+    Admin.findOne({where:{username:username}})
         .then(admin => {
             if (!admin) {
                 const error = new Error('Admin not found.');
@@ -239,7 +232,7 @@ exports.assignTeacher = (req, res, next) => {
     }
 
     // Check if the same teacherId and studentId combination already exists
-    TeacherStudent.findByPk({
+    TeacherStudent.findOne({
         where: {
             TeacherId: teacherId,
             StudentId: studentId
@@ -285,7 +278,7 @@ exports.updateTeacherPasswordByUsername = async (req, res, next) => {
         const hashPwd = await bcrypt.hash(password, 12);
 
         // Find the Teacher by username
-        const teacher = await Teacher.findByPk({ where: { username: username } });
+        const teacher = await Teacher.findOne({ where: { username: username } });
 
         if (!teacher) {
             const error = new Error('Teacher not found.');
@@ -318,7 +311,7 @@ exports.updatePassword = async (req, res, next) => {
         // Hash the password
         const hashPwd = await bcrypt.hash(password, 12);
 
-        const admin = await Admin.findByPk({ where: { username: username } });
+        const admin = await Admin.findOne({ where: { username: username } });
 
         if (!admin) {
             const error = new Error('Not found.');
@@ -351,7 +344,7 @@ exports.updateStudentPasswordByUsername = async (req, res, next) => {
         const hashPwd = await bcrypt.hash(password, 12);
 
         // Find the Student by username
-        const student = await Student.findByPk({ where: { username: username } });
+        const student = await Student.findOne({ where: { username: username } });
 
         if (!student) {
             const error = new Error('Student not found.');
@@ -384,7 +377,7 @@ exports.updateParentPasswordByUsername = async (req, res, next) => {
         const hashPwd = await bcrypt.hash(password, 12);
 
         // Find the Student by username
-        const parent = await Parent.findByPk({ where: { username: username } });
+        const parent = await Parent.findOne({ where: { username: username } });
 
         if (!parent) {
             const error = new Error('Parent not found.');
@@ -427,42 +420,33 @@ exports.addCourse =async (req,res,next)=>{
         });
         res.status(201).json({ message: 'Course added successfully.', newCourse });
     }catch(err){
-        console.log("error is:::",err);
         if(!err.statusCode){
             err.statusCode = 500;
         }
         next(err);
     }
 }
-exports.getAllCourses =async (req,res,next)=>{
-    try{
+exports.getAllCourses = async (req, res, next) => {
+    try {
         const courses = await Courses.findAll();
-        if(!courses){   
-            const message ='No courses found.';    
-        res.status(200).json({ courses,message });
-           
+        if (!courses || courses.length === 0) {
+            return res.status(200).json({ courses: [], message: 'No courses found.' });
         }
-        res.status(200).json({ courses });
-    }catch(err){
-        if(!err.statusCode){
-            err.statusCode = 500;
-        }
+        return res.status(200).json({ courses });
+    } catch (err) {
+        if (!err.statusCode) err.statusCode = 500;
         next(err);
     }
 }
-exports.getAllCoursesUpcoming =async (req,res,next)=>{
-    try{
-        const courses = await Courses.findAll({where:{isComing:true}});
-        if(!courses){   
-            const message ='No courses found.';    
-        res.status(200).json({ courses,message });
-           
+exports.getAllCoursesUpcoming = async (req, res, next) => {
+    try {
+        const courses = await Courses.findAll({ where: { isComing: true } });
+        if (!courses || courses.length === 0) {
+            return res.status(200).json({ courses: [], message: 'No courses found.' });
         }
-        res.status(200).json({ courses });
-    }catch(err){
-        if(!err.statusCode){
-            err.statusCode = 500;
-        }
+        return res.status(200).json({ courses });
+    } catch (err) {
+        if (!err.statusCode) err.statusCode = 500;
         next(err);
     }
 }
@@ -475,8 +459,10 @@ exports.deleteCourse =async (req,res,next)=>{
             error.statusCode = 404;
             throw error;
         }
-        const filePath = path.join(__dirname, '..', course.imageUrl);
-        fs.unlink(filePath);
+        if (course.imageUrl) {
+            const filePath = path.join(__dirname, '..', course.imageUrl);
+            await fs.unlink(filePath).catch(err => console.error('File deletion failed:', err.message));
+        }
 
         await course.destroy();
         res.status(200).json({ message: 'Course deleted successfully.' });
@@ -501,7 +487,7 @@ exports.updateCourse =async (req,res,next)=>{
         if(file){
             if(course?.imageUrl){
                 const filePath = path.join(__dirname, '..', course.imageUrl);
-                fs.unlink(filePath);
+                await fs.unlink(filePath).catch(err => console.error('File deletion failed:', err.message));
             }
          imageUrl = file && file?.path?.replace("\\", "/");
         }
@@ -514,7 +500,6 @@ exports.updateCourse =async (req,res,next)=>{
         });
         res.status(200).json({ message: 'Course updated successfully.', course });  
     }catch(err){
-        console.log("error is:::",err);
         if(!err.statusCode){
             err.statusCode = 500;
         }
@@ -557,7 +542,6 @@ exports.createAnnouncement = async (req, res) => {
 
         res.status(201).json({ announcements });
     } catch (error) {
-        console.log(error);
         res.status(500).json({ error: 'Failed to create announcements.' });
     }
 };
@@ -599,7 +583,6 @@ exports.getAllAnnouncements = async (req, res) => {
 exports.deleteAnnouncement = async (req, res,next) => {
     try {
         const announcementId = req.params.announcementId;
-        console.log("id iss:::",announcementId);
         const announcement = await Announcements.findByPk(announcementId);
         if (!announcement) {
             const error = new Error('Announcement not found.');
@@ -826,9 +809,8 @@ exports.updateRole =async (req,res,next)=>{
         await rolee.update({
             role
         });
-        res.status(200).json({ message: 'Role updated successfully.', rolee });  
+        res.status(200).json({ message: 'Role updated successfully.', rolee });
     }catch(err){
-        console.log("error is:::",err);
         if(!err.statusCode){
             err.statusCode = 500;
         }
