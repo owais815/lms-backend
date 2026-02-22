@@ -21,8 +21,8 @@ exports.startServer = (app) => {
     });
 
   const sslOptions = {
-    key: fs.readFileSync("/etc/letsencrypt/live/api.ejazmehmood.com/privkey.pem"),
-    cert: fs.readFileSync("/etc/letsencrypt/live/api.ejazmehmood.com/fullchain.pem"),
+    key: fs.readFileSync(process.env.SSL_KEY_PATH),
+    cert: fs.readFileSync(process.env.SSL_CERT_PATH),
   };
 
   const server = https.createServer(sslOptions, app).listen(process.env.HTTPS_PORT || 8443, () => {
