@@ -3,6 +3,7 @@ const {body} = require('express-validator');
 const Admin = require('../models/Admin');
 const studentController = require('../controllers/student');
 const Student = require('../models/Student');
+const { loginRateLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ router.put('/signup',[
 ],studentController.signup);
 
 
-router.post('/login',studentController.login);
+router.post('/login', loginRateLimiter, studentController.login);
 router.delete('/:studentId',studentController.delete);
 router.put('/update/:studentId',studentController.update);
 router.post('/getByUsername',studentController.getStudentByUsername);
