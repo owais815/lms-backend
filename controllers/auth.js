@@ -18,7 +18,6 @@ exports.signup= (req,res,next)=>{
     const name = req.body.name;
     const password = req.body.password;
     const role = req.body.role;
-    console.log("username:",username);
     bcrypt.hash(password,12)
     .then(hashPwd=>{
         const user = new Admin({
@@ -151,7 +150,7 @@ exports.login = (req, res, next) => {
 
             const token = jwt.sign(
                 { userId: loggedIn.id.toString(), username: loggedIn.username },
-                'supersupersecretsecret',
+                process.env.JWT_SECRET,
                 { expiresIn: '1h' }
             );
 
