@@ -2,6 +2,7 @@ const express = require('express');
 const {body} = require('express-validator');
 const teacherController = require('../controllers/teacher');
 const Teacher = require('../models/Teacher');
+const { loginRateLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ router.put('/signup',[
 ],teacherController.signup);
 
 
-router.post('/login',teacherController.login);
+router.post('/login', loginRateLimiter, teacherController.login);
 router.put('/update/:teacherId',teacherController.update);
 router.delete('/:teacherId',teacherController.delete);
 router.get('/teachers', teacherController.getAllTeachers);
