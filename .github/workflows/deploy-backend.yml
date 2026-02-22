@@ -23,19 +23,52 @@ jobs:
           script: |
             cd /var/www/lms-backend
 
-            # Pull latest code
+            # ── Write .env from GitHub Secrets ──────────────────────────────
+            cat > .env << 'ENVEOF'
+            NODE_ENV=production
+
+            # JWT
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+
+            # Database
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_USER=${{ secrets.DB_USER }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_USER_PROD=${{ secrets.DB_USER_PROD }}
+            DB_PASSWORD_PROD=${{ secrets.DB_PASSWORD_PROD }}
+
+            # CORS
+            CORS_ORIGIN_DEV=${{ secrets.CORS_ORIGIN_DEV }}
+            CORS_ORIGIN_PROD=${{ secrets.CORS_ORIGIN_PROD }}
+
+            # SSL certificate paths
+            SSL_KEY_PATH=${{ secrets.SSL_KEY_PATH }}
+            SSL_CERT_PATH=${{ secrets.SSL_CERT_PATH }}
+
+            # Ports
+            HTTP_PORT=${{ secrets.HTTP_PORT }}
+            HTTPS_PORT=${{ secrets.HTTPS_PORT }}
+
+            # Admin creation (disable in production)
+            ALLOW_AUTO_ADMIN_CREATION=false
+            ENVEOF
+
+            # ── Pull latest code ─────────────────────────────────────────────
             git pull origin main
 
-            # Install/update dependencies
+            # ── Install/update dependencies ──────────────────────────────────
             npm install --production
 
-            # Restart backend with PM2 in production mode
-            export NODE_ENV=production
-            pm2 restart lms-backend --update-env || NODE_ENV=production pm2 start app.js --name lms-backend
+            # ── Restart with PM2 (pick up new .env) ─────────────────────────
+            if pm2 list | grep -q "lms-backend"; then
+              pm2 restart lms-backend --update-env
+            else
+              NODE_ENV=production pm2 start app.js --name lms-backend
+            fi
 
-            # Save PM2 configuration
             pm2 save
 
-            # Show status
+            # ── Verify ───────────────────────────────────────────────────────
             pm2 status
             pm2 logs lms-backend --lines 20 --nostream
