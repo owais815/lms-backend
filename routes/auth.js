@@ -2,6 +2,7 @@ const express = require('express');
 const {body} = require('express-validator');
 const Admin = require('../models/Admin');
 const authController = require('../controllers/auth');
+const { loginRateLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ router.put('/signup',[
 ],authController.signup);
 
 
-router.post('/login',authController.login);
+router.post('/login', loginRateLimiter, authController.login);
 router.post('/addRole',authController.addRole);
 router.post('/addRights',authController.addRights);
 router.post('/addAdminRights',authController.addAdminRights);
