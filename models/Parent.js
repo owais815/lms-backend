@@ -42,20 +42,12 @@ const Parent = sequelize.define('Parent', {
     },
     //newly added field
     profileImg: {
-        type: Sequelize.STRING, 
+        type: Sequelize.STRING,
         allowNull: true
     },
-    studentId: {
-        type: Sequelize.INTEGER,
-        allowNull: false,
-        references: {
-            model: 'Students',
-            key: 'id'
-        },
-        onDelete: 'CASCADE'
-    },
 });
-Parent.hasMany(Student, { foreignKey: 'parentId' });
-Student.belongsTo(Parent, { foreignKey: 'parentId' });
+// One parent → many students (parentId lives on Student table)
+Parent.hasMany(Student, { foreignKey: 'parentId', as: 'students' });
+Student.belongsTo(Parent, { foreignKey: 'parentId', as: 'parent' });
 
 module.exports = Parent;
