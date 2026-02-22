@@ -94,6 +94,16 @@ const Student = sequelize.define('Student', {
         type: Sequelize.STRING,
         allowNull: true
     },
+    // FK to Parent — one parent can have many students
+    parentId: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'Parents',
+            key: 'id'
+        },
+        onDelete: 'SET NULL'
+    },
 });
 
 module.exports = Student;
