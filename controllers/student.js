@@ -130,7 +130,7 @@ exports.login = (req, res, next) => {
           email: loggedIn.email,
           userId: loggedIn.id.toString(),
         },
-        "supersupersecretsecret",
+        process.env.JWT_SECRET,
         { expiresIn: "1h" }
       );
 
@@ -296,7 +296,6 @@ exports.uploadImage = async (req, res, next) => {
       .status(200)
       .json({ message: "Image uploaded successfully", imageUrl: imageUrl });
   } catch (err) {
-    console.log("error is::::", err);
     if (!err.statusCode) {
       err.statusCode = 500;
     }
