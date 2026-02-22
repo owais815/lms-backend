@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require("express");
 const https = require("https");
 const fs = require("fs");
@@ -68,7 +69,22 @@ const {
   UpcomingCourses
 } = require("./models/association");
 
-app.use(cors());
+const allowedOrigins = [
+  process.env.CORS_ORIGIN_DEV,
+  process.env.CORS_ORIGIN_PROD,
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+}));
 
 app.use(bodyParser.json());
 
@@ -98,7 +114,7 @@ const fileFilter = (req, file, cb) => {
   ) {
     cb(null, true);
   } else {
-    cb(null, false);
+    cb(new Error('Invalid file type. Allowed: images (PNG/JPG), PDF, Word, PowerPoint'), false);
   }
 };
 app.use(
@@ -118,15 +134,6 @@ app.use(
 //   multer({ storage: resourceStorage, fileFilter: fileFilter }).single('file')
 // );
 
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, PATCH, DELETE"
-  );
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  next();
-});
 
 // app.use("/images", express.static(path.join(__dirname, "resources")));
 // app.use('/resources', express.static(path.join(__dirname, "resources")))
@@ -174,7 +181,7 @@ cleanupAnnouncements();
 const port = serverConfig.port || process.env.PORT || 8080;
 const host = serverConfig.host || process.env.HOST || 'localhost';
 sequelize
-  .sync()
+  .sync({ alter: true })
   .then(() => {
     if (env === "production") {
       serverConfig.startServer(app);
