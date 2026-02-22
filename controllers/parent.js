@@ -12,50 +12,36 @@ const CourseDetails = require("../models/CourseDetails");
 const { QuizAttempt, SubmittedAssignment, Assignment, Quiz, Attendance, UpcomingClass, Courses } = require("../models/association");
 const Parent = require("../models/Parent");
 
-exports.signup = (req, res, next) => {
+exports.signup = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    const error = new Error("Validation failed.");
-    error.statusCode = 422;
-    error.data = errors.array();
-    throw error;
+    return res.status(422).json({ message: "Validation failed.", data: errors.array() });
   }
-  const username = req.body.username;
-  const firstName = req.body.firstName;
-  const lastName = req.body.lastName;
-  const password = req.body.password;
-  const contact = req.body.contact;
-  const email = req.body.email;
-  const address = req.body.address;
-  const studentId = req.body.studentId;
 
-  bcrypt
-    .hash(password, 12)
-    .then((hashPwd) => {
-      const user = new Parent({
-        username: username,
-        firstName: firstName,
-        lastName: lastName,
-        contact: contact,
-        email: email,
-        password: hashPwd,
-        address: address,
-        studentId: studentId
-      });
-      return user.save();
-    })
-    .then((result) => {
-      res
-        .status(200)
-        .json({ message: "Parent saved successfully.!", userId: result.id });
-    })
+  const { username, firstName, lastName, password, contact, email, address } = req.body;
+  // Accept studentIds as an array (one parent → many students)
+  const studentIds = Array.isArray(req.body.studentIds)
+    ? req.body.studentIds
+    : req.body.studentId
+    ? [req.body.studentId]  // backwards-compat: single id
+    : [];
 
-    .catch((err) => {
-      if (!err?.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+  try {
+    const hashPwd = await bcrypt.hash(password, 12);
+    const parent = await Parent.create({
+      username, firstName, lastName, contact, email, password: hashPwd, address,
     });
+
+    // Set parentId on each linked student
+    if (studentIds.length > 0) {
+      await Student.update({ parentId: parent.id }, { where: { id: studentIds } });
+    }
+
+    res.status(200).json({ message: "Parent saved successfully!", userId: parent.id });
+  } catch (err) {
+    if (!err?.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 
 exports.login = (req, res, next) => {
@@ -84,7 +70,7 @@ exports.login = (req, res, next) => {
           email: loggedIn.email,
           userId: loggedIn.id.toString(),
         },
-        "supersupersecretsecret",
+        process.env.JWT_SECRET,
         { expiresIn: "1h" }
       );
 
@@ -132,68 +118,46 @@ exports.delete = (req, res, next) => {
     });
 };
 
-exports.update = (req, res, next) => {
+exports.update = async (req, res, next) => {
   const { parentId } = req.params;
-  const {
-    firstName,
-    lastName,
-    password,
-    contact,
-    address,
-    dateOfBirth,
-    guardian,
-    emergencyContact,
-  } = req.body;
+  const { firstName, lastName, contact, address, emergencyContact, studentIds } = req.body;
 
-  let updateFields = {};
-  if (firstName) {
-    updateFields.firstName = firstName;
-  }
-  if (lastName) {
-    updateFields.lastName = lastName;
-  }
-  if (password) {
-    // Hash the new password before updating
-    bcrypt.hash(password, 12).then((hashPwd) => {
-      updateFields.password = hashPwd;
-    });
-  }
-  if (contact) {
-    updateFields.contact = contact;
-  }
-  if (address) {
-    updateFields.address = address;
-  }
-  if (dateOfBirth) {
-    updateFields.dateOfBirth = dateOfBirth;
-  }
-  if (emergencyContact) {
-    updateFields.emergencyContact = emergencyContact;
-  }
+  try {
+    const parent = await Parent.findByPk(parentId);
+    if (!parent) {
+      return res.status(404).json({ message: "Parent not found!" });
+    }
 
-  Parent.findByPk(parentId)
-    .then((student) => {
-      if (!student) {
-        const error = new Error("Parent not found!");
-        error.statusCode = 404;
-        throw error;
+    const updateFields = {};
+    if (firstName !== undefined) updateFields.firstName = firstName;
+    if (lastName !== undefined) updateFields.lastName = lastName;
+    if (contact !== undefined) updateFields.contact = contact;
+    if (address !== undefined) updateFields.address = address;
+    if (emergencyContact !== undefined) updateFields.emergencyContact = emergencyContact;
+
+    await parent.update(updateFields);
+
+    // Update student links if studentIds was sent in the request
+    if (studentIds !== undefined) {
+      const ids = Array.isArray(studentIds) ? studentIds : [];
+      // Unlink all students currently linked to this parent
+      await Student.update({ parentId: null }, { where: { parentId: parent.id } });
+      // Link the new set of students
+      if (ids.length > 0) {
+        await Student.update({ parentId: parent.id }, { where: { id: ids } });
       }
-      return student.update(updateFields);
-    })
-    .then((updatedStudent) => {
-      res
-        .status(200)
-        .json({
-          message: "Parent updated successfully!",
-          student: updatedStudent,
-        });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+    }
+
+    // Return the parent with its freshly linked students
+    const updatedParent = await Parent.findByPk(parentId, {
+      include: [{ model: Student, as: 'students', attributes: ['id', 'firstName', 'lastName', 'username', 'email', 'status'] }],
     });
+
+    res.status(200).json({ message: "Parent updated successfully!", parent: updatedParent });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 
 exports.uploadImage = async (req, res, next) => {
@@ -222,7 +186,6 @@ exports.uploadImage = async (req, res, next) => {
       .status(200)
       .json({ message: "Image uploaded successfully", imageUrl: imageUrl });
   } catch (err) {
-    console.log("error is::::",err);
     if (!err.statusCode) {
       err.statusCode = 500;
     }
@@ -258,36 +221,40 @@ exports.getProfileImage = async (req, res, next) => {
 };
 
 
-exports.getAllParents = (req, res, next) => {
-  Parent.findAll()
-    .then((parents) => {
-      res.status(200).json({ parents: parents });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+exports.getAllParents = async (req, res, next) => {
+  try {
+    const parents = await Parent.findAll({
+      include: [{
+        model: Student,
+        as: 'students',
+        attributes: ['id', 'firstName', 'lastName', 'username', 'email', 'status'],
+      }],
     });
+    res.status(200).json({ parents });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
-exports.getParentById = (req, res, next) => {
+
+exports.getParentById = async (req, res, next) => {
   const parentId = req.params.parentId;
-  console.log("parent id is:::",parentId);
-  Parent.findByPk(parentId)
-    .then((parent) => {
-      if (!parent) {
-        const error = new Error("Parent not found!");
-        error.statusCode = 404;
-        throw error;
-      }
-      res.status(200).json({ parent: parent });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+  try {
+    const parent = await Parent.findByPk(parentId, {
+      include: [{
+        model: Student,
+        as: 'students',
+        attributes: ['id', 'firstName', 'lastName', 'username', 'email', 'status'],
+      }],
     });
+    if (!parent) {
+      return res.status(404).json({ message: "Parent not found!" });
+    }
+    res.status(200).json({ parent });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 
 exports.getStudentByUsername = (req, res, next) => {
