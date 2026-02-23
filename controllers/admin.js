@@ -483,20 +483,22 @@ exports.updateCourse =async (req,res,next)=>{
             throw error;
         }
         const { file } = req;
-        let imageUrl=null;
+        let newImageUrl = undefined;
         if(file){
             if(course?.imageUrl){
                 const filePath = path.join(__dirname, '..', course.imageUrl);
                 await fs.unlink(filePath).catch(err => console.error('File deletion failed:', err.message));
             }
-         imageUrl = file && file?.path?.replace("\\", "/");
+            newImageUrl = file.path.replace("\\", "/");
         }
-        const {courseName, duration, description} = req.body;
+        const { courseName, duration, description, price, isComing } = req.body;
         await course.update({
-            courseName,
-            duration,
-            description,
-            imageUrl
+            ...(courseName !== undefined ? { courseName } : {}),
+            ...(duration !== undefined ? { duration } : {}),
+            ...(description !== undefined ? { description } : {}),
+            ...(price !== undefined ? { price: parseFloat(price) } : {}),
+            ...(isComing !== undefined ? { isComing: isComing === 'true' || isComing === true } : {}),
+            ...(newImageUrl !== undefined ? { imageUrl: newImageUrl } : {}),
         });
         res.status(200).json({ message: 'Course updated successfully.', course });  
     }catch(err){
