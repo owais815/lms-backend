@@ -9,14 +9,43 @@ const Teacher = require("../models/Teacher");
 const Student = require("../models/Student");
 const { Quiz, QuizAttempt, CourseDetails, Courses } = require("../models/association");
 const Question = require("../models/Quiz/Question");
+const { Op } = require("sequelize");
 
 exports.createQuiz = async (req, res, next) => {
   try {
-    const { title, instructions, duration, passingScore, teacherId,courseDetailsId,studentId } = req.body;
-    const quiz = await Quiz.create({ title, instructions, duration, passingScore, teacherId,courseDetailsId,studentId });
-    res.status(201).json(quiz);
+    const { title, instructions, duration, passingScore, teacherId, courseId } = req.body;
+
+    // Find all students enrolled in this course under this teacher
+    const courseDetailsList = await CourseDetails.findAll({
+      where: { courseId, teacherId },
+    });
+    if (!courseDetailsList.length) {
+      return res.status(400).json({ message: 'No students are enrolled in this course yet.' });
+    }
+
+    // Check if teacher can publish directly or needs admin approval
+    const teacher = await Teacher.findByPk(teacherId);
+    const status = (!teacher || teacher.canDirectlyPublish === false) ? 'pending' : 'active';
+
+    // Create one Quiz record per enrolled student (current model has studentId FK)
+    const createdQuizzes = await Promise.all(
+      courseDetailsList.map((cd) =>
+        Quiz.create({
+          title,
+          instructions: instructions || null,
+          duration,
+          passingScore,
+          teacherId,
+          courseDetailsId: cd.id,
+          studentId: cd.studentId,
+          status,
+        })
+      )
+    );
+
+    // Return the first quiz (all share the same content)
+    res.status(201).json(createdQuizzes[0]);
   } catch (error) {
-    //res.status(400).json({ error: error.message });
     next(error);
   }
 };
@@ -47,8 +76,24 @@ exports.AddQuestionToQuiz = async (req, res, next) => {
   try {
     const { quizId } = req.params;
     const { type, question, options, correctAnswer } = req.body;
-    const newQuestion = await Question.create({ quizId, type, question, options, correctAnswer });
-    res.status(201).json(newQuestion);
+
+    // Find the source quiz to get its teacherId and title
+    const sourceQuiz = await Quiz.findByPk(quizId);
+    if (!sourceQuiz) return res.status(404).json({ error: 'Quiz not found' });
+
+    // Find all sibling quizzes (same teacher + same title — represents same quiz for all students)
+    const siblingQuizzes = await Quiz.findAll({
+      where: { teacherId: sourceQuiz.teacherId, title: sourceQuiz.title },
+    });
+
+    // Add the question to all sibling quizzes
+    const questions = await Promise.all(
+      siblingQuizzes.map((q) =>
+        Question.create({ quizId: q.id, type, question, options, correctAnswer })
+      )
+    );
+
+    res.status(201).json(questions[0]);
   } catch (error) {
     res.status(400).json({ error: error.message });
     next(error);
@@ -300,7 +345,7 @@ exports.getStudentQuizzes = async (req, res, next) => {
     const { studentId } = req.params; // Assuming studentId is passed as a route parameter
 
     const quizzes = await Quiz.findAll({
-      where: { studentId: studentId },
+      where: { studentId: studentId, status: 'active' },
       include: [
         {
           model: CourseDetails,
@@ -345,3 +390,140 @@ exports.checkIfStudentHasAttemptedQuiz = async (req, res, next) => {
     next(error);
   }
 }
+
+// Delete all sibling quizzes (same teacher + title) — removes a quiz from all students at once
+exports.deleteQuizGroup = async (req, res, next) => {
+  const { quizId } = req.params;
+  try {
+    const sourceQuiz = await Quiz.findByPk(quizId);
+    if (!sourceQuiz) return res.status(404).json({ error: 'Quiz not found' });
+
+    const siblings = await Quiz.findAll({
+      where: { teacherId: sourceQuiz.teacherId, title: sourceQuiz.title },
+    });
+    const siblingIds = siblings.map((q) => q.id);
+
+    await Question.destroy({ where: { quizId: { [Op.in]: siblingIds } } });
+    await QuizAttempt.destroy({ where: { quizId: { [Op.in]: siblingIds } } });
+    await Quiz.destroy({ where: { id: { [Op.in]: siblingIds } } });
+
+    res.status(200).json({ message: 'Quiz group deleted successfully', count: siblings.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+    next(error);
+  }
+};
+
+// Update all sibling quizzes (same teacher + title)
+exports.updateQuizGroup = async (req, res, next) => {
+  const { quizId } = req.params;
+  try {
+    const sourceQuiz = await Quiz.findByPk(quizId);
+    if (!sourceQuiz) return res.status(404).json({ error: 'Quiz not found' });
+
+    const { title, instructions, duration, passingScore } = req.body;
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (instructions !== undefined) updates.instructions = instructions;
+    if (duration !== undefined) updates.duration = duration;
+    if (passingScore !== undefined) updates.passingScore = passingScore;
+    // If rejected, resubmitting goes back to pending
+    if (sourceQuiz.status === 'rejected') updates.status = 'pending';
+
+    const siblings = await Quiz.findAll({
+      where: { teacherId: sourceQuiz.teacherId, title: sourceQuiz.title },
+    });
+    await Promise.all(siblings.map(q => q.update(updates)));
+
+    res.status(200).json({ message: 'Quiz updated successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+    next(error);
+  }
+};
+
+// Approve a quiz group (set all siblings to active)
+exports.approveQuizGroup = async (req, res, next) => {
+  const { quizId } = req.params;
+  try {
+    const sourceQuiz = await Quiz.findByPk(quizId);
+    if (!sourceQuiz) return res.status(404).json({ error: 'Quiz not found' });
+
+    const siblings = await Quiz.findAll({
+      where: { teacherId: sourceQuiz.teacherId, title: sourceQuiz.title },
+    });
+    await Promise.all(siblings.map(q => q.update({ status: 'active' })));
+
+    res.status(200).json({ message: 'Quiz approved', count: siblings.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+    next(error);
+  }
+};
+
+// Reject a quiz group (set all siblings to rejected)
+exports.rejectQuizGroup = async (req, res, next) => {
+  const { quizId } = req.params;
+  try {
+    const sourceQuiz = await Quiz.findByPk(quizId);
+    if (!sourceQuiz) return res.status(404).json({ error: 'Quiz not found' });
+
+    const siblings = await Quiz.findAll({
+      where: { teacherId: sourceQuiz.teacherId, title: sourceQuiz.title },
+    });
+    await Promise.all(siblings.map(q => q.update({ status: 'rejected' })));
+
+    res.status(200).json({ message: 'Quiz rejected', count: siblings.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+    next(error);
+  }
+};
+
+// Get all unique quiz groups for admin view
+exports.getAllQuizzesAdmin = async (req, res, next) => {
+  try {
+    // Get all quizzes with teacher + course info
+    const allQuizzes = await Quiz.findAll({
+      include: [
+        { model: Teacher, attributes: ['id', 'firstName', 'lastName'] },
+        {
+          model: CourseDetails,
+          as: 'CourseDetails',
+          include: [{ model: Courses, attributes: ['id', 'courseName'] }],
+          attributes: ['id', 'courseId'],
+        },
+      ],
+      attributes: ['id', 'title', 'instructions', 'duration', 'passingScore', 'teacherId', 'status', 'createdAt'],
+      order: [['createdAt', 'DESC']],
+    });
+
+    // Deduplicate by teacherId + title (same logic as teacher view)
+    const seen = new Map();
+    const groups = [];
+    for (const quiz of allQuizzes) {
+      const key = `${quiz.teacherId}||${quiz.title}`;
+      if (!seen.has(key)) {
+        seen.set(key, true);
+        groups.push({
+          representativeId: quiz.id,
+          title: quiz.title,
+          instructions: quiz.instructions,
+          duration: quiz.duration,
+          passingScore: quiz.passingScore,
+          teacherId: quiz.teacherId,
+          teacherName: quiz.Teacher ? `${quiz.Teacher.firstName} ${quiz.Teacher.lastName}` : null,
+          courseName: quiz.CourseDetails?.Courses?.courseName || null,
+          status: quiz.status,
+          createdAt: quiz.createdAt,
+          studentCount: allQuizzes.filter(q => q.teacherId === quiz.teacherId && q.title === quiz.title).length,
+        });
+      }
+    }
+
+    res.status(200).json({ quizzes: groups });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+    next(error);
+  }
+};
