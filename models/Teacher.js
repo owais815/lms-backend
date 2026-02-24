@@ -41,6 +41,10 @@ const Teacher = sequelize.define('Teacher', {
     imageUrl: {
         type: Sequelize.STRING,
         allowNull: true
+    },
+    canDirectlyPublish: {
+        type: Sequelize.BOOLEAN,
+        defaultValue: true
     }
 });
 
