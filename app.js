@@ -27,6 +27,7 @@ const parentRoutes = require("./routes/parent");
 const planRoutes = require("./routes/plan");
 const planChangeRoutes = require("./routes/planchangereq");
 const paymentRoutes = require("./routes/payment");
+const questionBankRoutes = require("./routes/questionBank");
 
 
 
@@ -160,6 +161,7 @@ app.use("/api/parent", parentRoutes);
 app.use("/api/plans", planRoutes);
 app.use("/api/planchange", planChangeRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/questionBank", questionBankRoutes);
 
 
 
