@@ -22,6 +22,10 @@ const Quiz = sequelize.define('Quiz', {
   passingScore: {
     type: Sequelize.FLOAT,
     allowNull: false
+  },
+  status: {
+    type: Sequelize.ENUM('pending', 'active', 'rejected'),
+    defaultValue: 'active'
   }
 });
 
