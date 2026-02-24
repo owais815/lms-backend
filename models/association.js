@@ -25,6 +25,8 @@ const Plan = require("./Plan");
 const PlanChangeRequest = require("./PlanChangeRequest");
 const Payment = require("./Payment");
 const QuestionBank = require("./QuestionBank");
+const ClassSchedule = require("./ClassSchedule");
+const ClassSession = require("./ClassSession");
 
 // Setup associations
 Teacher.belongsToMany(Student, {
@@ -145,6 +147,20 @@ PlanChangeRequest.belongsTo(Plan, { foreignKey: 'requestedPlanId', as: 'Requeste
 Student.hasMany(Payment, { foreignKey: 'studentId' });
 Payment.belongsTo(Student, { foreignKey: 'studentId' });
 
+// ClassSchedule associations
+ClassSchedule.belongsTo(Courses, { foreignKey: 'courseId' });
+ClassSchedule.belongsTo(Teacher, { foreignKey: 'teacherId' });
+ClassSchedule.belongsTo(Student, { foreignKey: 'studentId' });
+ClassSchedule.belongsTo(CourseDetails, { foreignKey: 'courseDetailsId' });
+ClassSchedule.hasMany(ClassSession, { foreignKey: 'scheduleId', as: 'sessions', onDelete: 'CASCADE' });
+
+// ClassSession associations
+ClassSession.belongsTo(ClassSchedule, { foreignKey: 'scheduleId', as: 'schedule' });
+ClassSession.belongsTo(Courses, { foreignKey: 'courseId' });
+ClassSession.belongsTo(Teacher, { foreignKey: 'teacherId' });
+ClassSession.belongsTo(Student, { foreignKey: 'studentId' });
+ClassSession.belongsTo(CourseDetails, { foreignKey: 'courseDetailsId' });
+
 module.exports = {
   Teacher,
   Student,
@@ -167,4 +183,6 @@ module.exports = {
   Blog,
   WeeklyResource,
   QuestionBank,
+  ClassSchedule,
+  ClassSession,
 };
