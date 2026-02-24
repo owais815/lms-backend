@@ -24,16 +24,18 @@ router.get('/teacher/:teacherId', ctrl.getTeacherSchedules);
 // Student: get own schedules
 router.get('/student/:studentId', ctrl.getStudentSchedules);
 
-// Admin: approve a teacher proposal
-router.put('/:id/approve', ctrl.approveSchedule);
-
-// Admin: cancel entire schedule + all future sessions
-router.put('/:id/cancel', ctrl.cancelSchedule);
+// Specific sub-resource routes MUST come before wildcard /:id routes
 
 // Admin/Teacher: cancel a single session
 router.put('/sessions/:sessionId/cancel', ctrl.cancelSession);
 
 // Get single session detail
 router.get('/sessions/:sessionId', ctrl.getSession);
+
+// Admin: approve a teacher proposal  (wildcard /:id — keep after specific paths)
+router.put('/:id/approve', ctrl.approveSchedule);
+
+// Admin: cancel entire schedule + all future sessions
+router.put('/:id/cancel', ctrl.cancelSchedule);
 
 module.exports = router;
