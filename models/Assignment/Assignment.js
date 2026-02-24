@@ -27,6 +27,10 @@ const Assignment = sequelize.define('Assignment', {
     maxScore: {
       type: DataTypes.INTEGER,
       allowNull: false
+    },
+    status: {
+      type: DataTypes.ENUM('pending', 'active', 'rejected'),
+      defaultValue: 'active'
     }
   });
 
