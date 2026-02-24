@@ -24,6 +24,7 @@ const WeeklyContent = require("./WeeklyContent");
 const Plan = require("./Plan");
 const PlanChangeRequest = require("./PlanChangeRequest");
 const Payment = require("./Payment");
+const QuestionBank = require("./QuestionBank");
 
 // Setup associations
 Teacher.belongsToMany(Student, {
@@ -164,5 +165,6 @@ module.exports = {
   UpcomingCourses,
   EnrolledStudents,
   Blog,
-  WeeklyResource
+  WeeklyResource,
+  QuestionBank,
 };
