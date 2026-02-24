@@ -28,6 +28,7 @@ const planRoutes = require("./routes/plan");
 const planChangeRoutes = require("./routes/planchangereq");
 const paymentRoutes = require("./routes/payment");
 const questionBankRoutes = require("./routes/questionBank");
+const classScheduleRoutes = require("./routes/classSchedule");
 
 
 
@@ -67,7 +68,9 @@ const {
   AdminFeedback,
   MakeUpClass,
   Courses,
-  UpcomingCourses
+  UpcomingCourses,
+  ClassSchedule,
+  ClassSession,
 } = require("./models/association");
 
 const allowedOrigins = [
@@ -162,6 +165,7 @@ app.use("/api/plans", planRoutes);
 app.use("/api/planchange", planChangeRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/questionBank", questionBankRoutes);
+app.use("/api/class-schedule", classScheduleRoutes);
 
 
 
