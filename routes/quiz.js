@@ -29,6 +29,9 @@ router.put('/assign',quizController.assignCourseAndStudentToQuiz);
   //delete a quiz
   router.delete('/quizzes/:quizId',quizController.deleteQuiz);
 
+  //delete all sibling quizzes (same teacher + title group) — used by teacher to remove a quiz from all students
+  router.delete('/quizGroup/:quizId', quizController.deleteQuizGroup);
+
   //delete a question
   router.delete('/quizzes/questions/:questionId',quizController.deleteQuestion);
 
@@ -37,5 +40,17 @@ router.put('/assign',quizController.assignCourseAndStudentToQuiz);
 
   //check if a student has attempted a quiz
   router.get('/student/:studentId/quiz-attempts/:quizId', quizController.checkIfStudentHasAttemptedQuiz);
+
+  //update quiz group (teacher edits title/instructions/duration/passingScore)
+  router.put('/update/:quizId', quizController.updateQuizGroup);
+
+  //approve a quiz group (admin only)
+  router.post('/approve/:quizId', quizController.approveQuizGroup);
+
+  //reject a quiz group (admin only)
+  router.post('/reject/:quizId', quizController.rejectQuizGroup);
+
+  //get all quiz groups for admin view
+  router.get('/admin/all', quizController.getAllQuizzesAdmin);
 
 module.exports = router;
