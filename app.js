@@ -186,9 +186,24 @@ app.use((error, req, res, next) => {
 cleanupAnnouncements();
 const port = serverConfig.port || process.env.PORT || 8080;
 const host = serverConfig.host || process.env.HOST || 'localhost';
+// Sequelize alter:true silently drops ENUM columns on MySQL — patch them back after sync
+async function patchEnumColumns() {
+  const patches = [
+    `ALTER TABLE Quizzes ADD COLUMN status ENUM('pending','active','rejected') DEFAULT 'active'`,
+  ];
+  for (const sql of patches) {
+    try {
+      await sequelize.query(sql);
+    } catch (_) {
+      // column already exists — ignore
+    }
+  }
+}
+
 sequelize
   .sync({ alter: true })
-  .then(() => {
+  .then(async () => {
+    await patchEnumColumns();
     if (env === "production") {
       serverConfig.startServer(app);
       (async () => {
