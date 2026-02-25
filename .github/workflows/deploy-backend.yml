@@ -54,8 +54,9 @@ jobs:
             ALLOW_AUTO_ADMIN_CREATION=false
             ENVEOF
 
-            # ── Pull latest code ─────────────────────────────────────────────
-            git pull origin main
+            # ── Pull latest code (force-reset to avoid merge conflicts) ────────
+            git fetch origin
+            git reset --hard origin/main
 
             # ── Install/update dependencies ──────────────────────────────────
             npm install --production
