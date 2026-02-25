@@ -216,5 +216,6 @@ sequelize
     }
   })
   .catch((err) => {
-    console.log(err);
+    console.error('DB sync failed — server will not start:', err);
+    process.exit(1);
   });
