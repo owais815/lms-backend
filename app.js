@@ -189,7 +189,40 @@ const host = serverConfig.host || process.env.HOST || 'localhost';
 // Sequelize alter:true silently drops ENUM columns on MySQL — patch them back after sync
 async function patchEnumColumns() {
   const patches = [
+    // Students
+    `ALTER TABLE Students ADD COLUMN status ENUM('active','inactive') DEFAULT 'active'`,
+    // Quizzes
     `ALTER TABLE Quizzes ADD COLUMN status ENUM('pending','active','rejected') DEFAULT 'active'`,
+    // Questions
+    `ALTER TABLE Questions ADD COLUMN type ENUM('multiple_choice','true_false','short_answer') NOT NULL DEFAULT 'multiple_choice'`,
+    // Assignments
+    `ALTER TABLE Assignments ADD COLUMN status ENUM('pending','active','rejected') DEFAULT 'active'`,
+    // SubmittedAssignments
+    `ALTER TABLE SubmittedAssignments ADD COLUMN status ENUM('Not Started','In Progress','Submitted','Graded') NOT NULL DEFAULT 'Not Started'`,
+    // Attendances
+    `ALTER TABLE Attendances ADD COLUMN status ENUM('Present','Absent') NOT NULL DEFAULT 'Present'`,
+    // ClassSchedules
+    `ALTER TABLE ClassSchedules ADD COLUMN recurrenceType ENUM('one-time','weekly','biweekly') NOT NULL DEFAULT 'one-time'`,
+    `ALTER TABLE ClassSchedules ADD COLUMN status ENUM('pending','active','cancelled') NOT NULL DEFAULT 'active'`,
+    `ALTER TABLE ClassSchedules ADD COLUMN createdBy ENUM('admin','teacher') NOT NULL DEFAULT 'admin'`,
+    // ClassSessions
+    `ALTER TABLE ClassSessions ADD COLUMN status ENUM('scheduled','completed','cancelled','makeup') NOT NULL DEFAULT 'scheduled'`,
+    // MakeUpClass
+    `ALTER TABLE MakeUpClass ADD COLUMN status ENUM('Pending','Approved','Rejected') NOT NULL DEFAULT 'Pending'`,
+    // AdminFeedback
+    `ALTER TABLE AdminFeedback ADD COLUMN areasToImprove ENUM('Reading','Writing','Speaking','Listening') DEFAULT NULL`,
+    `ALTER TABLE AdminFeedback ADD COLUMN progressInGrades ENUM('A','B','C','D','F') NOT NULL DEFAULT 'A'`,
+    // SupportRequests
+    `ALTER TABLE SupportRequests ADD COLUMN userType ENUM('student','teacher') NOT NULL DEFAULT 'student'`,
+    `ALTER TABLE SupportRequests ADD COLUMN priority ENUM('high','medium','normal') DEFAULT 'normal'`,
+    `ALTER TABLE SupportRequests ADD COLUMN status ENUM('pending','resolved','rejected') DEFAULT 'pending'`,
+    // Announcements
+    `ALTER TABLE Announcements ADD COLUMN type ENUM('payment','class','general','assessment') NOT NULL DEFAULT 'general'`,
+    // QuestionBanks
+    `ALTER TABLE QuestionBanks ADD COLUMN type ENUM('multiple_choice','true_false','short_answer') NOT NULL DEFAULT 'multiple_choice'`,
+    // PlanChangeRequests
+    `ALTER TABLE PlanChangeRequests ADD COLUMN status ENUM('pending','approved','rejected') DEFAULT 'pending'`,
+    `ALTER TABLE PlanChangeRequests ADD COLUMN paymentStatus ENUM('pending','paid') DEFAULT 'pending'`,
   ];
   for (const sql of patches) {
     try {
