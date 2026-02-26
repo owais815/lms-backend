@@ -215,18 +215,49 @@ exports.approveSchedule = async (req, res) => {
 exports.cancelSchedule = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason, cancelledByRole } = req.body;
     const schedule = await ClassSchedule.findByPk(id);
     if (!schedule) return res.status(404).json({ message: 'Schedule not found' });
 
     await schedule.update({ status: 'cancelled' });
 
-    // Cancel all future sessions
     const today = new Date().toISOString().slice(0, 10);
+
+    // Find any sessions that are currently live so we can emit socket events
+    const liveSessions = await ClassSession.findAll({
+      where: { scheduleId: id, date: { [Op.gte]: today }, status: 'scheduled', sessionStatus: 'live' },
+      attributes: ['id'],
+    });
+
+    // Cancel all future scheduled sessions; reset sessionStatus for live ones
     await ClassSession.update(
       { status: 'cancelled', cancellationReason: reason || 'Schedule cancelled by admin' },
       { where: { scheduleId: id, date: { [Op.gte]: today }, status: 'scheduled' } }
     );
+    if (liveSessions.length > 0) {
+      await ClassSession.update(
+        { sessionStatus: 'ended' },
+        { where: { id: liveSessions.map((s) => s.id) } }
+      );
+
+      // Notify connected clients for each live session that was cancelled
+      try {
+        const ioPromise = socket.getIO();
+        if (ioPromise) {
+          const io = await ioPromise;
+          for (const s of liveSessions) {
+            io.to(`session-${s.id}`).emit('session:ended', {
+              sessionId: Number(s.id),
+              cancelled: true,
+              cancelledBy: cancelledByRole === 'teacher' ? 'Teacher' : 'Admin',
+              reason: reason || '',
+            });
+          }
+        }
+      } catch (socketErr) {
+        console.error('Socket emit error (non-fatal):', socketErr.message);
+      }
+    }
 
     return res.json({ message: 'Schedule and future sessions cancelled' });
   } catch (err) {
@@ -241,15 +272,38 @@ exports.cancelSchedule = async (req, res) => {
 exports.cancelSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { reason } = req.body;
+    const { reason, cancelledByRole } = req.body;
 
     const session = await ClassSession.findByPk(sessionId);
     if (!session) return res.status(404).json({ message: 'Session not found' });
 
+    const wasLive = session.sessionStatus === 'live';
+
     await session.update({
       status: 'cancelled',
       cancellationReason: reason || 'Cancelled',
+      // If the session was live, mark it ended so the DB stays consistent
+      // and formatSessionEvent never accidentally shows it green.
+      ...(wasLive ? { sessionStatus: 'ended' } : {}),
     });
+
+    // Notify any connected clients so their CallModal closes / live badge clears
+    if (wasLive) {
+      try {
+        const ioPromise = socket.getIO();
+        if (ioPromise) {
+          const io = await ioPromise;
+          io.to(`session-${sessionId}`).emit('session:ended', {
+            sessionId: Number(sessionId),
+            cancelled: true,
+            cancelledBy: cancelledByRole === 'teacher' ? 'Teacher' : 'Admin',
+            reason: reason || '',
+          });
+        }
+      } catch (socketErr) {
+        console.error('Socket emit error (non-fatal):', socketErr.message);
+      }
+    }
 
     return res.json({ message: 'Session cancelled', session });
   } catch (err) {
@@ -372,8 +426,13 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, student) {
     ? 'pending'
     : session.status;
 
-  // Live sessions override the color regardless of attendance status
-  const isLive = session.sessionStatus === 'live';
+  // A session is only shown as "live" when it is actively ongoing.
+  // Cancelled / completed / makeup sessions must never render green even if
+  // their sessionStatus was not reset when they were cancelled.
+  const isLive = session.sessionStatus === 'live' &&
+    effectiveStatus !== 'cancelled' &&
+    effectiveStatus !== 'completed' &&
+    effectiveStatus !== 'makeup';
   const color = isLive
     ? SESSION_COLORS.live
     : (SESSION_COLORS[effectiveStatus] || SESSION_COLORS.scheduled);
