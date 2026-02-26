@@ -189,6 +189,24 @@ const handleConnection = (socket, io) => {
     }
   });
 
+  // -------------------------------------------------------------------------
+  // Session subscription — client joins a Socket.IO room per session ID
+  // so it receives session:started / session:ended events for those sessions.
+  // -------------------------------------------------------------------------
+  socket.on("subscribe:sessions", (sessionIds) => {
+    if (!Array.isArray(sessionIds)) return;
+    sessionIds.forEach((id) => {
+      if (id) socket.join(`session-${id}`);
+    });
+  });
+
+  socket.on("unsubscribe:sessions", (sessionIds) => {
+    if (!Array.isArray(sessionIds)) return;
+    sessionIds.forEach((id) => {
+      if (id) socket.leave(`session-${id}`);
+    });
+  });
+
   socket.on("disconnect", () => {
     // console.log("i am going to disconnect", onlineUsers);
     for (const [userId, userData] of onlineUsers.entries()) {
