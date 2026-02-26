@@ -40,34 +40,43 @@ async function callingAppRequest(path, method = 'GET', body = null) {
 /**
  * Create a join URL for a calling-app room.
  *
+ * The calling-app's /api/v1/join endpoint always constructs the URL with
+ * "https://" which breaks plain-HTTP local development. Instead, we:
+ *   1. Call /api/v1/token to get a signed JWT from the calling-app
+ *   2. Build the join URL ourselves using CALLING_APP_URL (correct protocol)
+ *
  * @param {string} roomId       - Unique room identifier, e.g. 'lms-42'
  * @param {string} userName     - Display name of the participant
  * @param {boolean} isPresenter - true = teacher/admin (can mute, kick, etc.)
  * @returns {Promise<string>}   - The full join URL to load in the iframe
  */
 async function createJoinUrl(roomId, userName, isPresenter) {
-  const data = await callingAppRequest('/join', 'POST', {
-    room: roomId,
-    roomPassword: false,
-    name: userName,
-    audio: true,
-    video: true,
-    screen: isPresenter,
-    hide: false,
-    notify: false,
-    token: {
-      username: userName,
-      password: 'lms-token',
-      presenter: isPresenter,
-      expire: '2h',
-    },
+  // Step 1: get a JWT token from the calling-app
+  const tokenData = await callingAppRequest('/token', 'POST', {
+    username: userName,
+    password: 'lms-token',
+    presenter: isPresenter,
+    expire: '2h',
   });
 
-  if (!data || !data.join) {
-    throw new Error('Calling-app did not return a join URL');
+  if (!tokenData || !tokenData.token) {
+    throw new Error('Calling-app did not return a token');
   }
 
-  return data.join;
+  // Step 2: build the join URL ourselves using the correct base URL
+  const params = new URLSearchParams({
+    room: roomId,
+    roomPassword: 'false',
+    name: encodeURIComponent(userName),
+    audio: 'true',
+    video: 'true',
+    screen: String(isPresenter),
+    hide: 'false',
+    notify: 'false',
+    token: tokenData.token,
+  });
+
+  return `${CALLING_APP_URL}/join?${params.toString()}`;
 }
 
 /**
