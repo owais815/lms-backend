@@ -29,6 +29,7 @@ const planChangeRoutes = require("./routes/planchangereq");
 const paymentRoutes = require("./routes/payment");
 const questionBankRoutes = require("./routes/questionBank");
 const classScheduleRoutes = require("./routes/classSchedule");
+const coursePDFRoutes = require("./routes/coursePDF");
 
 
 
@@ -121,6 +122,10 @@ const fileFilter = (req, file, cb) => {
     cb(new Error('Invalid file type. Allowed: images (PNG/JPG), PDF, Word, PowerPoint'), false);
   }
 };
+// PDF upload route uses its own multer (array, pdf-only) — must be mounted
+// BEFORE the global single-file multer so the request body isn't consumed first.
+app.use("/api/course-pdfs", coursePDFRoutes);
+
 app.use(
   multer({ storage: fileStorage, fileFilter: fileFilter }).single("file")
 );
