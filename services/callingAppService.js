@@ -40,42 +40,34 @@ async function callingAppRequest(path, method = 'GET', body = null) {
 /**
  * Create a join URL for a calling-app room.
  *
- * The calling-app's /api/v1/join endpoint always constructs the URL with
- * "https://" which breaks plain-HTTP local development. Instead, we:
- *   1. Call /api/v1/token to get a signed JWT from the calling-app
- *   2. Build the join URL ourselves using CALLING_APP_URL (correct protocol)
+ * No token is needed: calling-app config has host.protected=false which sets
+ * hostCfg.authenticated=true server-wide, so the /join route always serves
+ * the room page without requiring a token.
+ *
+ * Without a token in the URL, Room.js never sends peer_token over WebSocket,
+ * and since user_auth=false the WebSocket auth block is skipped entirely —
+ * preventing the JWT catch-block that would redirect to the landing page.
+ *
+ * Name encoding note: pass userName directly to URLSearchParams — it handles
+ * percent-encoding automatically. Pre-encoding with encodeURIComponent causes
+ * double-encoding (%20 → %2520) making the name appear as "Ali%20Sher" in room.
  *
  * @param {string} roomId       - Unique room identifier, e.g. 'lms-42'
  * @param {string} userName     - Display name of the participant
- * @param {boolean} isPresenter - true = teacher/admin (can mute, kick, etc.)
+ * @param {boolean} isPresenter - true = teacher/admin
  * @returns {Promise<string>}   - The full join URL to load in the iframe
  */
 async function createJoinUrl(roomId, userName, isPresenter) {
-  // Step 1: get a JWT token from the calling-app.
-  // username/password must match an entry in calling-app config.js host.users
-  // so that isAuthPeer() returns true during the WebSocket join validation.
-  const tokenData = await callingAppRequest('/token', 'POST', {
-    username: 'lms-system',
-    password: 'lms-token',
-    presenter: isPresenter,
-    expire: '2h',
-  });
-
-  if (!tokenData || !tokenData.token) {
-    throw new Error('Calling-app did not return a token');
-  }
-
-  // Step 2: build the join URL ourselves using the correct base URL
   const params = new URLSearchParams({
     room: roomId,
     roomPassword: 'false',
-    name: encodeURIComponent(userName),
+    name: userName,
     audio: 'true',
     video: 'true',
     screen: String(isPresenter),
     hide: 'false',
     notify: 'false',
-    token: tokenData.token,
+    isPresenter: String(isPresenter),
   });
 
   return `${CALLING_APP_URL}/join?${params.toString()}`;
