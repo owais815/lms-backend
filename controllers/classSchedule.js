@@ -7,6 +7,8 @@ const Student = require('../models/Student');
 const Quiz = require('../models/Quiz/Quiz');
 const Assignment = require('../models/Assignment/Assignment');
 const CourseDetails = require('../models/CourseDetails');
+const callingAppService = require('../services/callingAppService');
+const socket = require('../socket');
 
 // ---------------------------------------------------------------------------
 // Color helpers
@@ -17,6 +19,7 @@ const SESSION_COLORS = {
   cancelled: '#EF4444',
   makeup: '#8B5CF6',
   pending: '#F59E0B',
+  live: '#22C55E',
 };
 
 const EVENT_COLORS = {
@@ -85,7 +88,12 @@ async function generateSessions(schedule) {
   }
 
   if (sessions.length > 0) {
-    await ClassSession.bulkCreate(sessions);
+    const created = await ClassSession.bulkCreate(sessions, { returning: true });
+    // Assign deterministic room IDs now that we have PKs
+    const updates = created.map((s) =>
+      ClassSession.update({ roomId: `lms-${s.id}` }, { where: { id: s.id } })
+    );
+    await Promise.all(updates);
   }
   return sessions.length;
 }
@@ -164,7 +172,7 @@ exports.proposeSession = async (req, res) => {
     });
 
     // Create a single session — will appear as "pending" for admin
-    await ClassSession.create({
+    const proposedSession = await ClassSession.create({
       scheduleId: schedule.id,
       title,
       date: startDate,
@@ -175,6 +183,7 @@ exports.proposeSession = async (req, res) => {
       studentId: studentId || null,
       courseDetailsId: courseDetailsId || null,
     });
+    await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
 
     return res.status(201).json({ message: 'Session proposed — awaiting admin approval', schedule });
   } catch (err) {
@@ -363,7 +372,12 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, student) {
     ? 'pending'
     : session.status;
 
-  const color = SESSION_COLORS[effectiveStatus] || SESSION_COLORS.scheduled;
+  // Live sessions override the color regardless of attendance status
+  const isLive = session.sessionStatus === 'live';
+  const color = isLive
+    ? SESSION_COLORS.live
+    : (SESSION_COLORS[effectiveStatus] || SESSION_COLORS.scheduled);
+
   const meetingLink = session.meetingLink || (session.schedule ? session.schedule.meetingLink : null);
 
   return {
@@ -373,11 +387,14 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, student) {
     end: `${session.date}T${session.endTime}`,
     backgroundColor: color,
     borderColor: color,
+    classNames: isLive ? ['event-live'] : [],
     extendedProps: {
       type: 'class',
       status: effectiveStatus,
+      sessionStatus: session.sessionStatus || 'idle',
       sessionId: session.id,
       scheduleId: session.scheduleId,
+      roomId: session.roomId || null,
       meetingLink,
       courseName: course ? course.courseName : null,
       teacherName: teacher ? `${teacher.firstName} ${teacher.lastName}` : null,
@@ -633,6 +650,174 @@ exports.getCalendarEvents = async (req, res) => {
     return res.json(events);
   } catch (err) {
     console.error('getCalendarEvents error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/class-schedule/sessions/:sessionId/join
+// Generates a secure join URL via the calling-app.
+// Teachers/admins can join regardless of sessionStatus.
+// Students can only join when sessionStatus === 'live'.
+// ---------------------------------------------------------------------------
+exports.joinSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { userId, role } = req.body;
+
+    if (!userId || !role) {
+      return res.status(400).json({ message: 'userId and role are required' });
+    }
+
+    const session = await ClassSession.findByPk(sessionId, {
+      include: [
+        { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName'] },
+        { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
+      ],
+    });
+
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+
+    // Authorization check
+    if (role === 'teacher' && String(session.teacherId) !== String(userId)) {
+      return res.status(403).json({ message: 'Not authorized for this session' });
+    }
+    if (role === 'student') {
+      if (String(session.studentId) !== String(userId)) {
+        return res.status(403).json({ message: 'Not authorized for this session' });
+      }
+      if (session.sessionStatus !== 'live') {
+        return res.status(403).json({ message: 'Session is not live yet. Wait for the teacher to start.' });
+      }
+    }
+
+    if (!session.roomId) {
+      return res.status(500).json({ message: 'Session has no room ID — please contact admin' });
+    }
+
+    const isPresenter = role === 'teacher' || role === 'admin';
+
+    // Determine display name
+    let userName = 'Participant';
+    if (role === 'teacher' && session.Teacher) {
+      userName = `${session.Teacher.firstName} ${session.Teacher.lastName}`;
+    } else if (role === 'student' && session.Student) {
+      userName = `${session.Student.firstName} ${session.Student.lastName}`;
+    } else if (role === 'admin') {
+      userName = 'Admin';
+    }
+
+    const joinUrl = await callingAppService.createJoinUrl(session.roomId, userName, isPresenter);
+
+    return res.json({ joinUrl, roomId: session.roomId });
+  } catch (err) {
+    console.error('joinSession error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/class-schedule/sessions/:sessionId/start
+// Teacher or admin starts the live session.
+// Emits session:started to all subscribed socket clients.
+// ---------------------------------------------------------------------------
+exports.startSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { userId, role } = req.body;
+
+    if (!userId || !role) {
+      return res.status(400).json({ message: 'userId and role are required' });
+    }
+    if (role !== 'teacher' && role !== 'admin') {
+      return res.status(403).json({ message: 'Only teachers and admins can start a session' });
+    }
+
+    const session = await ClassSession.findByPk(sessionId, {
+      include: [
+        { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName'] },
+        { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
+      ],
+    });
+
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+    if (role === 'teacher' && String(session.teacherId) !== String(userId)) {
+      return res.status(403).json({ message: 'Not authorized for this session' });
+    }
+    if (session.sessionStatus === 'live') {
+      return res.json({ message: 'Session already live', sessionStatus: 'live' });
+    }
+
+    await session.update({ sessionStatus: 'live' });
+
+    // Emit real-time notification to all subscribed clients
+    try {
+      const ioPromise = socket.getIO();
+      if (ioPromise) {
+        const io = await ioPromise;
+        const teacherName = session.Teacher
+          ? `${session.Teacher.firstName} ${session.Teacher.lastName}`
+          : 'Teacher';
+        const courseName = session.Course ? session.Course.courseName : '';
+        io.to(`session-${sessionId}`).emit('session:started', {
+          sessionId: Number(sessionId),
+          title: session.title,
+          teacherName,
+          courseName,
+          roomId: session.roomId,
+        });
+      }
+    } catch (socketErr) {
+      console.error('Socket emit error (non-fatal):', socketErr.message);
+    }
+
+    return res.json({ message: 'Session started', sessionStatus: 'live' });
+  } catch (err) {
+    console.error('startSession error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/class-schedule/sessions/:sessionId/end
+// Teacher or admin ends the live session.
+// Emits session:ended to all subscribed socket clients.
+// ---------------------------------------------------------------------------
+exports.endSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { userId, role } = req.body;
+
+    if (!userId || !role) {
+      return res.status(400).json({ message: 'userId and role are required' });
+    }
+    if (role !== 'teacher' && role !== 'admin') {
+      return res.status(403).json({ message: 'Only teachers and admins can end a session' });
+    }
+
+    const session = await ClassSession.findByPk(sessionId);
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+    if (role === 'teacher' && String(session.teacherId) !== String(userId)) {
+      return res.status(403).json({ message: 'Not authorized for this session' });
+    }
+
+    await session.update({ sessionStatus: 'ended' });
+
+    try {
+      const ioPromise = socket.getIO();
+      if (ioPromise) {
+        const io = await ioPromise;
+        io.to(`session-${sessionId}`).emit('session:ended', {
+          sessionId: Number(sessionId),
+        });
+      }
+    } catch (socketErr) {
+      console.error('Socket emit error (non-fatal):', socketErr.message);
+    }
+
+    return res.json({ message: 'Session ended', sessionStatus: 'ended' });
+  } catch (err) {
+    console.error('endSession error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
