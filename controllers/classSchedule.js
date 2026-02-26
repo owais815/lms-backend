@@ -450,7 +450,9 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, student) {
     extendedProps: {
       type: 'class',
       status: effectiveStatus,
-      sessionStatus: session.sessionStatus || 'idle',
+      // If the raw DB value is 'live' but the session is now cancelled/completed/makeup,
+      // return 'ended' so the frontend never shows the LIVE badge on a non-active session.
+      sessionStatus: isLive ? 'live' : (session.sessionStatus === 'live' ? 'ended' : (session.sessionStatus || 'idle')),
       sessionId: session.id,
       scheduleId: session.scheduleId,
       roomId: session.roomId || null,
