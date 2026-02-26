@@ -51,9 +51,11 @@ async function callingAppRequest(path, method = 'GET', body = null) {
  * @returns {Promise<string>}   - The full join URL to load in the iframe
  */
 async function createJoinUrl(roomId, userName, isPresenter) {
-  // Step 1: get a JWT token from the calling-app
+  // Step 1: get a JWT token from the calling-app.
+  // username/password must match an entry in calling-app config.js host.users
+  // so that isAuthPeer() returns true during the WebSocket join validation.
   const tokenData = await callingAppRequest('/token', 'POST', {
-    username: userName,
+    username: 'lms-system',
     password: 'lms-token',
     presenter: isPresenter,
     expire: '2h',
