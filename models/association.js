@@ -27,6 +27,7 @@ const Payment = require("./Payment");
 const QuestionBank = require("./QuestionBank");
 const ClassSchedule = require("./ClassSchedule");
 const ClassSession = require("./ClassSession");
+const CoursePDF = require("./CoursePDF");
 
 // Setup associations
 Teacher.belongsToMany(Student, {
@@ -154,6 +155,10 @@ ClassSchedule.belongsTo(Student, { foreignKey: 'studentId' });
 ClassSchedule.belongsTo(CourseDetails, { foreignKey: 'courseDetailsId' });
 ClassSchedule.hasMany(ClassSession, { foreignKey: 'scheduleId', as: 'sessions', onDelete: 'CASCADE' });
 
+// CoursePDF associations
+Courses.hasMany(CoursePDF, { foreignKey: 'courseId', as: 'pdfs', onDelete: 'CASCADE' });
+CoursePDF.belongsTo(Courses, { foreignKey: 'courseId' });
+
 // ClassSession associations
 ClassSession.belongsTo(ClassSchedule, { foreignKey: 'scheduleId', as: 'schedule' });
 ClassSession.belongsTo(Courses, { foreignKey: 'courseId' });
@@ -185,4 +190,5 @@ module.exports = {
   QuestionBank,
   ClassSchedule,
   ClassSession,
+  CoursePDF,
 };
