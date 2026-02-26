@@ -457,6 +457,7 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, student) {
       scheduleId: session.scheduleId,
       roomId: session.roomId || null,
       meetingLink,
+      courseId: session.courseId || null,
       courseName: course ? course.courseName : null,
       teacherName: teacher ? `${teacher.firstName} ${teacher.lastName}` : null,
       teacherImageUrl: teacher ? teacher.imageUrl : null,
@@ -825,6 +826,7 @@ exports.startSession = async (req, res) => {
           title: session.title,
           teacherName,
           courseName,
+          courseId: session.courseId || null,
           roomId: session.roomId,
         });
       }
