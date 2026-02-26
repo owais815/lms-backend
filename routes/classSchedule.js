@@ -29,6 +29,11 @@ router.get('/student/:studentId', ctrl.getStudentSchedules);
 // Admin/Teacher: cancel a single session
 router.put('/sessions/:sessionId/cancel', ctrl.cancelSession);
 
+// Calling integration — order matters: specific sub-paths before bare /:sessionId
+router.post('/sessions/:sessionId/join', ctrl.joinSession);
+router.post('/sessions/:sessionId/start', ctrl.startSession);
+router.post('/sessions/:sessionId/end', ctrl.endSession);
+
 // Get single session detail
 router.get('/sessions/:sessionId', ctrl.getSession);
 
