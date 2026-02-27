@@ -3,8 +3,10 @@ const ChatMessage = require('../models/ChatMessage');
 const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
 const Admin = require('../models/Admin');
+const Parent = require('../models/Parent');
 const { Op } = require('sequelize');
 const sequelize = require("../utils/database");
+const isAuth = require('../middleware/is-auth');
 const router = express.Router();
 
 // Helper: batch-fetch sender details in 3 queries instead of N queries
@@ -152,6 +154,57 @@ router.get('/recent-chats/:userId/:userType', async (req, res) => {
   } catch (error) {
     console.error('Error fetching recent chats:', error);
     res.status(500).json({ error: 'Failed to fetch recent chats' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/chat/users — list all users for admin's "start conversation" picker
+// Returns a unified array normalised to { id, displayName, username, userType, avatarUrl }
+// ---------------------------------------------------------------------------
+router.get('/users', isAuth, async (req, res) => {
+  try {
+    const [students, teachers, admins, parents] = await Promise.all([
+      Student.findAll({ attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }),
+      Teacher.findAll({ attributes: ['id', 'firstName', 'lastName', 'username', 'imageUrl'] }),
+      Admin.findAll({ attributes: ['id', 'name', 'username'] }),
+      Parent.findAll({ attributes: ['id', 'firstName', 'lastName', 'username'] }),
+    ]);
+
+    const normalised = [
+      ...students.map(s => ({
+        id: s.id,
+        displayName: `${s.firstName} ${s.lastName || ''}`.trim(),
+        username: s.username,
+        userType: 'student',
+        avatarUrl: s.profileImg || null,
+      })),
+      ...teachers.map(t => ({
+        id: t.id,
+        displayName: `${t.firstName} ${t.lastName || ''}`.trim(),
+        username: t.username,
+        userType: 'teacher',
+        avatarUrl: t.imageUrl || null,
+      })),
+      ...admins.map(a => ({
+        id: a.id,
+        displayName: a.name,
+        username: a.username,
+        userType: 'admin',
+        avatarUrl: null,
+      })),
+      ...parents.map(p => ({
+        id: p.id,
+        displayName: `${p.firstName} ${p.lastName || ''}`.trim(),
+        username: p.username,
+        userType: 'parent',
+        avatarUrl: null,
+      })),
+    ];
+
+    res.json({ users: normalised });
+  } catch (error) {
+    console.error('Error fetching chat users:', error);
+    res.status(500).json({ message: 'Failed to fetch users' });
   }
 });
 
