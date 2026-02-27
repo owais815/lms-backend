@@ -52,6 +52,11 @@ jobs:
 
             # Admin creation (disable in production)
             ALLOW_AUTO_ADMIN_CREATION=false
+
+            # Calling App (MiroTalk SFU)
+            CALLING_APP_URL=${{ secrets.CALLING_APP_URL }}
+            CALLING_APP_API_URL=${{ secrets.CALLING_APP_API_URL }}
+            CALLING_APP_API_SECRET=${{ secrets.CALLING_APP_API_SECRET }}
             ENVEOF
 
             # ── Pull latest code (force-reset to avoid merge conflicts) ────────

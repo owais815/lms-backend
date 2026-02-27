@@ -7,10 +7,13 @@
  * the API secret is never exposed to the frontend.
  */
 
+// Public URL returned to browsers (iframe join links) — must be HTTPS in production
 const CALLING_APP_URL = process.env.CALLING_APP_URL || 'http://localhost:3010';
+// Internal URL for backend→calling-app API calls — can stay on localhost to avoid SSL round-trip
+const CALLING_APP_API_URL = process.env.CALLING_APP_API_URL || CALLING_APP_URL;
 const CALLING_APP_API_SECRET = process.env.CALLING_APP_API_SECRET || 'lms_calling_secret_2026';
 
-const API_BASE = `${CALLING_APP_URL}/api/v1`;
+const API_BASE = `${CALLING_APP_API_URL}/api/v1`;
 
 /**
  * Make an authenticated request to the calling-app API.
