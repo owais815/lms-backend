@@ -47,6 +47,11 @@ const ChatMessage = sequelize.define("ChatMessage", {
     type: Sequelize.BOOLEAN,
     defaultValue: false,
   },
+  groupId: {
+    type: Sequelize.INTEGER,
+    allowNull: true,
+    defaultValue: null,
+  },
 });
 
 module.exports = ChatMessage;
