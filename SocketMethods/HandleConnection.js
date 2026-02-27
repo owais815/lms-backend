@@ -80,12 +80,15 @@ const handleConnection = (socket, io) => {
   // chatMessage — public group message, broadcast to ALL
   // -------------------------------------------------------------------------
   socket.on("chatMessage", async (data) => {
-    const { message, senderId, senderType } = data;
+    const { message, senderId, senderType, messageType, mediaUrl, mediaDuration } = data;
     try {
       const savedMessage = await ChatMessage.create({
-        message,
+        message: message || '',
         senderId,
         senderType,
+        messageType: messageType || 'text',
+        mediaUrl: mediaUrl || null,
+        mediaDuration: mediaDuration || null,
       });
 
       let senderDetails;
@@ -122,7 +125,7 @@ const handleConnection = (socket, io) => {
   //       an existing admin-initiated conversation.
   // -------------------------------------------------------------------------
   socket.on("privateMessage", async (data) => {
-    const { message, senderId, senderType, receiverId, receiverType } = data;
+    const { message, senderId, senderType, receiverId, receiverType, messageType, mediaUrl, mediaDuration } = data;
 
     try {
       // Enforce admin-mediated rule: if sender is not admin, a prior message
@@ -153,12 +156,15 @@ const handleConnection = (socket, io) => {
       }
 
       const savedMessage = await ChatMessage.create({
-        message,
+        message: message || '',
         senderId,
         senderType,
         receiverId,
         receiverType,
         isPrivate: true,
+        messageType: messageType || 'text',
+        mediaUrl: mediaUrl || null,
+        mediaDuration: mediaDuration || null,
       });
 
       let senderDetails;
