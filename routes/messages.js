@@ -163,48 +163,66 @@ router.get('/recent-chats/:userId/:userType', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/chat/users — list all users for admin's "start conversation" picker
-// Returns a unified array normalised to { id, displayName, username, userType, avatarUrl }
+// GET /api/chat/users — role-filtered user list for the "New Conversation" picker
+// Rules:
+//   admin   → everyone
+//   teacher → admins only
+//   student → admins + their own linked parent
+//   parent  → admins + their linked students
 // ---------------------------------------------------------------------------
 router.get('/users', isAuth, async (req, res) => {
   try {
-    const [students, teachers, admins, parents] = await Promise.all([
-      Student.findAll({ attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }),
-      Teacher.findAll({ attributes: ['id', 'firstName', 'lastName', 'username', 'imageUrl'] }),
-      Admin.findAll({ attributes: ['id', 'name', 'username'] }),
-      Parent.findAll({ attributes: ['id', 'firstName', 'lastName', 'username'] }),
-    ]);
+    const { userType, userId: qUserId } = req.query;
+    const callerId = parseInt(qUserId) || req.userId;
 
-    const normalised = [
-      ...students.map(s => ({
-        id: s.id,
-        displayName: `${s.firstName} ${s.lastName || ''}`.trim(),
-        username: s.username,
-        userType: 'student',
-        avatarUrl: s.profileImg || null,
-      })),
-      ...teachers.map(t => ({
-        id: t.id,
-        displayName: `${t.firstName} ${t.lastName || ''}`.trim(),
-        username: t.username,
-        userType: 'teacher',
-        avatarUrl: t.imageUrl || null,
-      })),
-      ...admins.map(a => ({
-        id: a.id,
-        displayName: a.name,
-        username: a.username,
-        userType: 'admin',
-        avatarUrl: null,
-      })),
-      ...parents.map(p => ({
-        id: p.id,
-        displayName: `${p.firstName} ${p.lastName || ''}`.trim(),
-        username: p.username,
-        userType: 'parent',
-        avatarUrl: null,
-      })),
-    ];
+    const toAdmin   = a => ({ id: a.id, displayName: a.name,                                         username: a.username, userType: 'admin',   avatarUrl: null });
+    const toTeacher = t => ({ id: t.id, displayName: `${t.firstName} ${t.lastName||''}`.trim(),      username: t.username, userType: 'teacher', avatarUrl: t.imageUrl || null });
+    const toStudent = s => ({ id: s.id, displayName: `${s.firstName} ${s.lastName||''}`.trim(),      username: s.username, userType: 'student', avatarUrl: s.profileImg || null });
+    const toParent  = p => ({ id: p.id, displayName: `${p.firstName} ${p.lastName||''}`.trim(),      username: p.username, userType: 'parent',  avatarUrl: null });
+
+    let normalised = [];
+
+    if (userType === 'admin') {
+      // Admin can chat with everyone
+      const [students, teachers, admins, parents] = await Promise.all([
+        Student.findAll({ attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }),
+        Teacher.findAll({ attributes: ['id', 'firstName', 'lastName', 'username', 'imageUrl'] }),
+        Admin.findAll({ attributes: ['id', 'name', 'username'] }),
+        Parent.findAll({ attributes: ['id', 'firstName', 'lastName', 'username'] }),
+      ]);
+      normalised = [...students.map(toStudent), ...teachers.map(toTeacher), ...admins.map(toAdmin), ...parents.map(toParent)];
+
+    } else if (userType === 'teacher') {
+      // Teacher → admin only
+      const admins = await Admin.findAll({ attributes: ['id', 'name', 'username'] });
+      normalised = admins.map(toAdmin);
+
+    } else if (userType === 'student') {
+      // Student → admins + their own parent (if linked)
+      const [admins, student] = await Promise.all([
+        Admin.findAll({ attributes: ['id', 'name', 'username'] }),
+        Student.findOne({
+          where: { id: callerId },
+          attributes: ['id', 'parentId'],
+          include: [{ model: Parent, as: 'parent', attributes: ['id', 'firstName', 'lastName', 'username'] }],
+        }),
+      ]);
+      normalised = admins.map(toAdmin);
+      if (student && student.parent) normalised.push(toParent(student.parent));
+
+    } else if (userType === 'parent') {
+      // Parent → admins + their linked students
+      const [admins, students] = await Promise.all([
+        Admin.findAll({ attributes: ['id', 'name', 'username'] }),
+        Student.findAll({ where: { parentId: callerId }, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }),
+      ]);
+      normalised = [...admins.map(toAdmin), ...students.map(toStudent)];
+
+    } else {
+      // Fallback: admins only
+      const admins = await Admin.findAll({ attributes: ['id', 'name', 'username'] });
+      normalised = admins.map(toAdmin);
+    }
 
     res.json({ users: normalised });
   } catch (error) {
