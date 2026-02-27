@@ -115,8 +115,9 @@ router.get('/recent-chats/:userId/:userType', async (req, res) => {
     );
 
     // Batch-fetch other user details: collect unique IDs per type
+    // NOTE: raw SQL returns integer columns as strings, so use parseInt() on both sides
     const otherUserIds = recentUsers.map(msg => {
-      const isUserSender = msg.senderId === parseInt(userId) && msg.senderType === userType;
+      const isUserSender = parseInt(msg.senderId) === parseInt(userId) && msg.senderType === userType;
       return {
         id: isUserSender ? msg.receiverId : msg.senderId,
         type: isUserSender ? msg.receiverType : msg.senderType,
@@ -126,26 +127,30 @@ router.get('/recent-chats/:userId/:userType', async (req, res) => {
     const studentIds = [...new Set(otherUserIds.filter(u => u.type === 'student').map(u => u.id))];
     const teacherIds = [...new Set(otherUserIds.filter(u => u.type === 'teacher').map(u => u.id))];
     const adminIds   = [...new Set(otherUserIds.filter(u => u.type === 'admin').map(u => u.id))];
+    const parentIds  = [...new Set(otherUserIds.filter(u => u.type === 'parent').map(u => u.id))];
 
-    const [students, teachers, admins] = await Promise.all([
+    const [students, teachers, admins, parents] = await Promise.all([
       studentIds.length ? Student.findAll({ where: { id: studentIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }) : [],
       teacherIds.length ? Teacher.findAll({ where: { id: teacherIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'imageUrl'] }) : [],
       adminIds.length   ? Admin.findAll({ where: { id: adminIds }, attributes: ['id', 'name', 'username'] }) : [],
+      parentIds.length  ? Parent.findAll({ where: { id: parentIds }, attributes: ['id', 'firstName', 'lastName', 'username'] }) : [],
     ]);
 
     const studentMap = Object.fromEntries(students.map(s => [s.id, { ...s.toJSON(), userType: 'student' }]));
     const teacherMap = Object.fromEntries(teachers.map(t => [t.id, { ...t.toJSON(), userType: 'teacher' }]));
     const adminMap   = Object.fromEntries(admins.map(a => [a.id, { ...a.toJSON(), userType: 'admin' }]));
+    const parentMap  = Object.fromEntries(parents.map(p => [p.id, { ...p.toJSON(), userType: 'parent' }]));
 
     const finalResponse = recentUsers.map(msg => {
-      const isUserSender = msg.senderId === parseInt(userId) && msg.senderType === userType;
+      const isUserSender = parseInt(msg.senderId) === parseInt(userId) && msg.senderType === userType;
       const otherId   = isUserSender ? msg.receiverId : msg.senderId;
       const otherType = isUserSender ? msg.receiverType : msg.senderType;
 
       const otherUserDetails =
         otherType === 'student' ? (studentMap[otherId] ?? null) :
         otherType === 'teacher' ? (teacherMap[otherId] ?? null) :
-        otherType === 'admin'   ? (adminMap[otherId] ?? null) : null;
+        otherType === 'admin'   ? (adminMap[otherId]   ?? null) :
+        otherType === 'parent'  ? (parentMap[otherId]  ?? null) : null;
 
       return { ...msg, otherUserDetails };
     });
