@@ -36,6 +36,8 @@ const coursePDFRoutes = require("./routes/coursePDF");
 
 
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
+const { startMessageCleanup } = require('./Schedular/cleanupMessages');
+const isAuth = require('./middleware/is-auth');
 const io =  require('./socket').getIO();
 
 // Choose the environment
@@ -126,6 +128,15 @@ const fileFilter = (req, file, cb) => {
 // BEFORE the global single-file multer so the request body isn't consumed first.
 app.use("/api/course-pdfs", coursePDFRoutes);
 
+// Voice message upload — must be mounted BEFORE global multer to prevent
+// the global middleware from consuming/discarding the 'voice' file field.
+const voiceFileFilter = (req, file, cb) => cb(null, file.mimetype.startsWith('audio/'));
+const voiceUpload = multer({ storage: fileStorage, fileFilter: voiceFileFilter }).single('voice');
+app.post('/api/chat/upload-voice', isAuth, voiceUpload, (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'No audio file received' });
+  res.json({ mediaUrl: `resources/${req.file.filename}` });
+});
+
 app.use(
   multer({ storage: fileStorage, fileFilter: fileFilter }).single("file")
 );
@@ -189,6 +200,7 @@ app.use((error, req, res, next) => {
 
 
 cleanupAnnouncements();
+startMessageCleanup(io);
 const port = serverConfig.port || process.env.PORT || 8080;
 const host = serverConfig.host || process.env.HOST || 'localhost';
 // Sequelize alter:true silently drops ENUM columns on MySQL — patch them back after sync
@@ -228,6 +240,8 @@ async function patchEnumColumns() {
     // PlanChangeRequests
     `ALTER TABLE PlanChangeRequests ADD COLUMN status ENUM('pending','approved','rejected') DEFAULT 'pending'`,
     `ALTER TABLE PlanChangeRequests ADD COLUMN paymentStatus ENUM('pending','paid') DEFAULT 'pending'`,
+    // ChatMessages
+    `ALTER TABLE ChatMessages ADD COLUMN messageType ENUM('text','voice') NOT NULL DEFAULT 'text'`,
   ];
   for (const sql of patches) {
     try {
