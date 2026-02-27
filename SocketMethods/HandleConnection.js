@@ -1,5 +1,6 @@
 const Admin = require("../models/Admin");
 const ChatMessage = require("../models/ChatMessage");
+const ChatGroupMember = require("../models/ChatGroupMember");
 const Notification = require("../models/Notifications");
 const Student = require("../models/Student");
 const Teacher = require("../models/Teacher");
@@ -37,6 +38,12 @@ const handleConnection = (socket, io) => {
 
       // Join a personal room for targeted delivery
       socket.join(userKey);
+
+      // Join all group rooms this user belongs to
+      try {
+        const memberships = await ChatGroupMember.findAll({ where: { userId, userType } });
+        memberships.forEach(m => socket.join(`group-${m.groupId}`));
+      } catch (_) {}
 
       // Send unread notifications on connect
       try {
@@ -195,6 +202,65 @@ const handleConnection = (socket, io) => {
     } catch (error) {
       console.error("Error handling privateMessage:", error);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // groupMessage — message to a specific chat group
+  // Payload: { groupId, senderId, senderType, message, messageType?, mediaUrl?, mediaDuration? }
+  // -------------------------------------------------------------------------
+  socket.on("groupMessage", async (data) => {
+    const { groupId, senderId, senderType, message, messageType, mediaUrl, mediaDuration } = data;
+    try {
+      // Verify sender is a member with canSend = true
+      const membership = await ChatGroupMember.findOne({
+        where: { groupId, userId: senderId, userType: senderType },
+      });
+      if (!membership) {
+        socket.emit("chatError", { message: "You are not a member of this group." });
+        return;
+      }
+      if (!membership.canSend) {
+        socket.emit("chatError", { message: "You are not allowed to send messages in this group." });
+        return;
+      }
+
+      const savedMessage = await ChatMessage.create({
+        message: message || '',
+        senderId,
+        senderType,
+        groupId,
+        messageType: messageType || 'text',
+        mediaUrl: mediaUrl || null,
+        mediaDuration: mediaDuration || null,
+      });
+
+      let senderDetails;
+      if (senderType === "student") {
+        senderDetails = await Student.findByPk(senderId, { attributes: ["id", "firstName", "lastName", "username", "profileImg"] });
+      } else if (senderType === "teacher") {
+        senderDetails = await Teacher.findByPk(senderId, { attributes: ["id", "firstName", "lastName", "username", "imageUrl"] });
+      } else if (senderType === "admin") {
+        senderDetails = await Admin.findByPk(senderId, { attributes: ["id", "name", "username"] });
+      }
+
+      io.to(`group-${groupId}`).emit("newGroupMessage", {
+        ...savedMessage.toJSON(),
+        senderDetails,
+      });
+    } catch (error) {
+      console.error("Error handling groupMessage:", error);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // joinGroup / leaveGroup — called when admin adds/removes a member in real-time
+  // -------------------------------------------------------------------------
+  socket.on("joinGroup", ({ groupId }) => {
+    if (groupId) socket.join(`group-${groupId}`);
+  });
+
+  socket.on("leaveGroup", ({ groupId }) => {
+    if (groupId) socket.leave(`group-${groupId}`);
   });
 
   // -------------------------------------------------------------------------
