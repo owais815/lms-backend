@@ -1,6 +1,8 @@
 const Teacher = require("../models/Teacher");
 const Student = require("../models/Student");
 const { Quiz, QuizAttempt, CourseDetails, Assignment, SubmittedAssignment, Courses } = require("../models/association");
+const Admin = require("../models/Admin");
+const notify = require("../utils/notify");
 const fs = require('fs').promises;
 const path = require('path');
 
@@ -42,6 +44,32 @@ exports.createAssignment = async (req, res, next) => {
             studentId: cd.studentId,
             teacherId,
             status: 'Not Started',
+          })
+        )
+      );
+      // Notify each student of new assignment
+      const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Your teacher';
+      await Promise.all(
+        courseDetailsList.map((cd) =>
+          notify({
+            userId: cd.studentId,
+            userType: 'student',
+            title: 'New Assignment',
+            message: `${teacherName} published a new assignment: "${title}".`,
+          })
+        )
+      );
+    } else {
+      // Notify all admins of pending assignment awaiting approval
+      const admins = await Admin.findAll({ attributes: ['id'] });
+      const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : 'A teacher';
+      await Promise.all(
+        admins.map((admin) =>
+          notify({
+            userId: admin.id,
+            userType: 'admin',
+            title: 'Assignment Pending Approval',
+            message: `${teacherName} submitted an assignment "${title}" awaiting your approval.`,
           })
         )
       );
@@ -113,6 +141,24 @@ exports.approveAssignment = async (req, res, next) => {
           })
         )
       );
+      // Notify teacher of approval
+      notify({
+        userId: assignment.teacherId,
+        userType: 'teacher',
+        title: 'Assignment Approved',
+        message: `Your assignment "${assignment.title}" has been approved and is now visible to students.`,
+      });
+      // Notify all students
+      await Promise.all(
+        courseDetailsList.map((cd) =>
+          notify({
+            userId: cd.studentId,
+            userType: 'student',
+            title: 'New Assignment',
+            message: `A new assignment "${assignment.title}" has been published for your course.`,
+          })
+        )
+      );
     }
 
     res.status(200).json({ message: 'Assignment approved', assignment });
@@ -129,6 +175,12 @@ exports.rejectAssignment = async (req, res, next) => {
       return res.status(404).json({ message: 'Assignment not found' });
     }
     await assignment.update({ status: 'rejected' });
+    notify({
+      userId: assignment.teacherId,
+      userType: 'teacher',
+      title: 'Assignment Rejected',
+      message: `Your assignment "${assignment.title}" was not approved. Please review and resubmit.`,
+    });
     res.status(200).json({ message: 'Assignment rejected', assignment });
   } catch (error) {
     next(error);
@@ -174,6 +226,14 @@ exports.submitAssignment = async (req, res, next) => {
     submittedAssignment.status = 'Submitted';
     await submittedAssignment.save();
 
+    // Notify teacher that a student submitted
+    notify({
+      userId: submittedAssignment.teacherId,
+      userType: 'teacher',
+      title: 'Assignment Submitted',
+      message: `A student submitted their assignment. Check the submissions panel.`,
+    });
+
     res.status(200).json({ message: 'Assignment submitted successfully', submittedAssignment });
   } catch (error) {
     next(error);
@@ -193,6 +253,14 @@ exports.gradeAssignment = async (req, res, next) => {
     submittedAssignment.feedback = feedback;
     submittedAssignment.status = 'Graded';
     await submittedAssignment.save();
+
+    // Notify student of grade
+    notify({
+      userId: submittedAssignment.studentId,
+      userType: 'student',
+      title: 'Assignment Graded',
+      message: `Your assignment has been graded. You scored ${score} point${score !== 1 ? 's' : ''}.`,
+    });
 
     res.status(200).json({ message: 'Assignment graded successfully', submittedAssignment });
   } catch (error) {
