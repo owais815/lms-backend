@@ -197,15 +197,9 @@ exports.delete = async (req, res, next) => {
     await UpcomingClass.destroy({ where: { teacherId } });
     await MakeUpClass.destroy({ where: { teacherId } });
 
-    // Delete ClassSchedules (and their sessions) owned by this teacher
-    const schedules = await ClassSchedule.findAll({ where: { teacherId }, attributes: ['id'] });
-    const scheduleIds = schedules.map(s => s.id);
-    if (scheduleIds.length > 0) {
-      await ClassSession.destroy({ where: { scheduleId: scheduleIds } });
-      await ClassSchedule.destroy({ where: { teacherId } });
-    }
-    // Nullify teacherId on any remaining ClassSessions
-    await ClassSession.update({ teacherId: null }, { where: { teacherId } });
+    // Delete all ClassSessions for this teacher (teacherId is NOT NULL so can't nullify)
+    await ClassSession.destroy({ where: { teacherId } });
+    await ClassSchedule.destroy({ where: { teacherId } });
 
     // Nullify teacherId in records that remain meaningful without the teacher
     await CourseDetails.update({ teacherId: null }, { where: { teacherId } });
