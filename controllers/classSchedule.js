@@ -7,8 +7,10 @@ const Student = require('../models/Student');
 const Quiz = require('../models/Quiz/Quiz');
 const Assignment = require('../models/Assignment/Assignment');
 const CourseDetails = require('../models/CourseDetails');
+const Admin = require('../models/Admin');
 const callingAppService = require('../services/callingAppService');
 const socket = require('../socket');
+const notify = require('../utils/notify');
 
 // ---------------------------------------------------------------------------
 // Color helpers
@@ -185,6 +187,21 @@ exports.proposeSession = async (req, res) => {
     });
     await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
 
+    // Notify admins of pending proposal
+    const admins = await Admin.findAll({ attributes: ['id'] });
+    const teacher = await Teacher.findByPk(teacherId, { attributes: ['firstName', 'lastName'] });
+    const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : 'A teacher';
+    await Promise.all(
+      admins.map((admin) =>
+        notify({
+          userId: admin.id,
+          userType: 'admin',
+          title: 'Session Proposal',
+          message: `${teacherName} proposed a session "${title}" awaiting your approval.`,
+        })
+      )
+    );
+
     return res.status(201).json({ message: 'Session proposed — awaiting admin approval', schedule });
   } catch (err) {
     console.error('proposeSession error:', err);
@@ -202,6 +219,17 @@ exports.approveSchedule = async (req, res) => {
     if (!schedule) return res.status(404).json({ message: 'Schedule not found' });
 
     await schedule.update({ status: 'active' });
+
+    // Notify teacher that proposal was approved
+    if (schedule.teacherId) {
+      notify({
+        userId: schedule.teacherId,
+        userType: 'teacher',
+        title: 'Session Approved',
+        message: `Your proposed session "${schedule.title}" has been approved.`,
+      });
+    }
+
     return res.json({ message: 'Schedule approved', schedule });
   } catch (err) {
     console.error('approveSchedule error:', err);
@@ -303,6 +331,28 @@ exports.cancelSession = async (req, res) => {
       } catch (socketErr) {
         console.error('Socket emit error (non-fatal):', socketErr.message);
       }
+    }
+
+    // Notify enrolled students of cancellation
+    try {
+      if (session.courseId && session.teacherId) {
+        const enrolledStudents = await CourseDetails.findAll({
+          where: { courseId: session.courseId, teacherId: session.teacherId },
+          attributes: ['studentId'],
+        });
+        await Promise.all(
+          enrolledStudents.map((cd) =>
+            notify({
+              userId: cd.studentId,
+              userType: 'student',
+              title: 'Class Cancelled',
+              message: `The class "${session.title}" on ${session.date} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`,
+            })
+          )
+        );
+      }
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
     }
 
     return res.json({ message: 'Session cancelled', session });
@@ -832,6 +882,29 @@ exports.startSession = async (req, res) => {
       }
     } catch (socketErr) {
       console.error('Socket emit error (non-fatal):', socketErr.message);
+    }
+
+    // Notify enrolled students that the session is live (DB notification — they also get a Socket.IO live toast)
+    try {
+      const enrolledStudents = await CourseDetails.findAll({
+        where: { courseId: session.courseId, teacherId: session.teacherId },
+        attributes: ['studentId'],
+      });
+      const teacherName = session.Teacher
+        ? `${session.Teacher.firstName} ${session.Teacher.lastName}`
+        : 'Your teacher';
+      await Promise.all(
+        enrolledStudents.map((cd) =>
+          notify({
+            userId: cd.studentId,
+            userType: 'student',
+            title: 'Class Started',
+            message: `${teacherName} started the class "${session.title}". Join now!`,
+          })
+        )
+      );
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
     }
 
     return res.json({ message: 'Session started', sessionStatus: 'live' });
