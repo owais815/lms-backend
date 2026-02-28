@@ -17,6 +17,20 @@ const Parent = require("../models/Parent");
 const UpcomingClass = require("../models/UpcomingClasses");
 const Rights = require("../models/RolesRights");
 const RolesRights = require("../models/RolesRights");
+const UpcomingCourses = require("../models/UpcomingCourse");
+const EnrolledStudents = require("../models/EnrolledStudents");
+const CoursePDF = require("../models/CoursePDF");
+const ClassSchedule = require("../models/ClassSchedule");
+const ClassSession = require("../models/ClassSession");
+const Quiz = require("../models/Quiz/Quiz");
+const QuizAttempt = require("../models/Quiz/QuizAttempt");
+const Question = require("../models/Quiz/Question");
+const Assignment = require("../models/Assignment/Assignment");
+const SubmittedAssignment = require("../models/Assignment/SubmittedAssignment");
+const Attendance = require("../models/Attendance");
+const MyBookmark = require("../models/Bookmarks/MyBookmark");
+const AdminFeedback = require("../models/AdminFeedback/AdminFeedback");
+const MakeUpClass = require("../models/MakeupClasses/MakeUpClass");
 
 exports.signup= (req,res,next)=>{
     const errors = validationResult(req);
@@ -450,15 +464,61 @@ exports.getAllCoursesUpcoming = async (req, res, next) => {
         next(err);
     }
 }
-exports.deleteCourse =async (req,res,next)=>{
-    try{
+exports.deleteCourse = async (req, res, next) => {
+    try {
         const courseId = req.params.courseId;
         const course = await Courses.findByPk(courseId);
-        if(!course){
+        if (!course) {
             const error = new Error('Course not found.');
             error.statusCode = 404;
             throw error;
         }
+
+        // --- Cascade cleanup in dependency order ---
+
+        // 1. ClassSchedule → ClassSession
+        const schedules = await ClassSchedule.findAll({ where: { courseId }, attributes: ['id'] });
+        const scheduleIds = schedules.map(s => s.id);
+        if (scheduleIds.length > 0) {
+            await ClassSession.destroy({ where: { scheduleId: scheduleIds } });
+        }
+        await ClassSession.destroy({ where: { courseId } }); // any orphaned sessions
+        await ClassSchedule.destroy({ where: { courseId } });
+
+        // 2. CourseDetails children
+        const details = await CourseDetails.findAll({ where: { courseId }, attributes: ['id'] });
+        const detailIds = details.map(d => d.id);
+        if (detailIds.length > 0) {
+            // Quiz children
+            const quizzes = await Quiz.findAll({ where: { courseDetailsId: detailIds }, attributes: ['id'] });
+            const quizIds = quizzes.map(q => q.id);
+            if (quizIds.length > 0) {
+                await QuizAttempt.destroy({ where: { quizId: quizIds } });
+                await Question.destroy({ where: { quizId: quizIds } });
+                await Quiz.destroy({ where: { id: quizIds } });
+            }
+            // Assignment children
+            const assignments = await Assignment.findAll({ where: { courseDetailsId: detailIds }, attributes: ['id'] });
+            const assignmentIds = assignments.map(a => a.id);
+            if (assignmentIds.length > 0) {
+                await SubmittedAssignment.destroy({ where: { assignmentId: assignmentIds } });
+                await Assignment.destroy({ where: { id: assignmentIds } });
+            }
+            // Other CourseDetails dependents
+            await Attendance.destroy({ where: { courseDetailsId: detailIds } });
+            await MyBookmark.destroy({ where: { courseDetailsId: detailIds } });
+            await AdminFeedback.destroy({ where: { courseDetailsId: detailIds } });
+            await MakeUpClass.destroy({ where: { courseDetailsId: detailIds } });
+            await UpcomingClass.destroy({ where: { courseDetailsId: detailIds } });
+            await CourseDetails.destroy({ where: { courseId } });
+        }
+
+        // 3. Other direct Course dependents
+        await UpcomingCourses.destroy({ where: { courseId } });
+        await EnrolledStudents.destroy({ where: { courseId } });
+        await CoursePDF.destroy({ where: { courseId } });
+
+        // 4. Delete course image file if present
         if (course.imageUrl) {
             const filePath = path.join(__dirname, '..', course.imageUrl);
             await fs.unlink(filePath).catch(err => console.error('File deletion failed:', err.message));
@@ -466,10 +526,8 @@ exports.deleteCourse =async (req,res,next)=>{
 
         await course.destroy();
         res.status(200).json({ message: 'Course deleted successfully.' });
-    }catch(err){
-        if(!err.statusCode){
-            err.statusCode = 500;
-        }
+    } catch (err) {
+        if (!err.statusCode) err.statusCode = 500;
         next(err);
     }
 }

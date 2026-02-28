@@ -96,26 +96,23 @@ exports.login = (req, res, next) => {
     });
 };
 
-exports.delete = (req, res, next) => {
+exports.delete = async (req, res, next) => {
   const parentId = req.params.parentId;
-  Parent.findByPk(parentId)
-    .then((parent) => {
-      if (!parent) {
-        const error = new Error("Parent not found!");
-        error.statusCode = 404;
-        throw error;
-      }
-      return parent.destroy();
-    })
-    .then(() => {
-      res.status(200).json({ message: "Parent Deleted Successfully" });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+  try {
+    const parent = await Parent.findByPk(parentId);
+    if (!parent) {
+      const error = new Error("Parent not found!");
+      error.statusCode = 404;
+      throw error;
+    }
+    // Unlink students before deleting to avoid FK constraint error
+    await Student.update({ parentId: null }, { where: { parentId } });
+    await parent.destroy();
+    res.status(200).json({ message: "Parent Deleted Successfully" });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 
 exports.update = async (req, res, next) => {

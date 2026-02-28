@@ -13,6 +13,13 @@ const UpcomingClass = require("../models/UpcomingClasses");
 const Courses = require("../models/Course");
 const CourseDetails = require("../models/CourseDetails");
 const { sendNotifications } = require("../utils/notificationUtil");
+const UpcomingCourses = require("../models/UpcomingCourse");
+const MakeUpClass = require("../models/MakeupClasses/MakeUpClass");
+const ClassSchedule = require("../models/ClassSchedule");
+const ClassSession = require("../models/ClassSession");
+const Quiz = require("../models/Quiz/Quiz");
+const Assignment = require("../models/Assignment/Assignment");
+const SubmittedAssignment = require("../models/Assignment/SubmittedAssignment");
 
 exports.signup = (req, res, next) => {
   const errors = validationResult(req);
@@ -172,32 +179,49 @@ exports.update = (req, res, next) => {
 
 //delete teacher record on Id
 
-exports.delete = (req, res, next) => {
-  const teacherId = req.params.teacherId; // Get teacherId from URL params
+exports.delete = async (req, res, next) => {
+  const teacherId = req.params.teacherId;
+  try {
+    const teacher = await Teacher.findByPk(teacherId);
+    if (!teacher) {
+      const error = new Error("Teacher not found.");
+      error.statusCode = 404;
+      throw error;
+    }
 
-  // Find the Teacher record by ID and delete it
-  Teacher.findByPk(teacherId)
-    .then((teacher) => {
-      if (!teacher) {
-        const error = new Error("Teacher not found.");
-        error.statusCode = 404;
-        throw error;
-      }
+    // Delete junction / owned records first
+    await TeacherStudent.destroy({ where: { TeacherId: teacherId } });
+    await TeacherQualification.destroy({ where: { teacherId } });
+    await Specialization.destroy({ where: { teacherId } });
+    await StudentFeedback.destroy({ where: { teacherId } });
+    await UpcomingClass.destroy({ where: { teacherId } });
+    await MakeUpClass.destroy({ where: { teacherId } });
 
-      // Delete the Teacher record
-      return teacher.destroy();
-    })
-    .then(() => {
-      // Send success response
-      res.status(200).json({ message: "Teacher deleted successfully." });
-    })
-    .catch((err) => {
-      // Handle errors
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+    // Delete ClassSchedules (and their sessions) owned by this teacher
+    const schedules = await ClassSchedule.findAll({ where: { teacherId }, attributes: ['id'] });
+    const scheduleIds = schedules.map(s => s.id);
+    if (scheduleIds.length > 0) {
+      await ClassSession.destroy({ where: { scheduleId: scheduleIds } });
+      await ClassSchedule.destroy({ where: { teacherId } });
+    }
+    // Nullify teacherId on any remaining ClassSessions
+    await ClassSession.update({ teacherId: null }, { where: { teacherId } });
+
+    // Nullify teacherId in records that remain meaningful without the teacher
+    await CourseDetails.update({ teacherId: null }, { where: { teacherId } });
+    await UpcomingCourses.update({ teacherId: null }, { where: { teacherId } });
+
+    // Nullify teacherId on quiz/assignment records (they remain without teacher)
+    await Quiz.update({ teacherId: null }, { where: { teacherId } });
+    await Assignment.update({ teacherId: null }, { where: { teacherId } });
+    await SubmittedAssignment.update({ teacherId: null }, { where: { teacherId } });
+
+    await teacher.destroy();
+    res.status(200).json({ message: "Teacher deleted successfully." });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 
 // getAllTeachers
