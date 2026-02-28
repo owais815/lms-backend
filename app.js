@@ -31,6 +31,7 @@ const paymentRoutes = require("./routes/payment");
 const questionBankRoutes = require("./routes/questionBank");
 const classScheduleRoutes = require("./routes/classSchedule");
 const coursePDFRoutes = require("./routes/coursePDF");
+const notificationRoutes = require("./routes/notifications");
 
 
 
@@ -184,6 +185,7 @@ app.use("/api/planchange", planChangeRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/questionBank", questionBankRoutes);
 app.use("/api/class-schedule", classScheduleRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 
 
