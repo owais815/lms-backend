@@ -10,6 +10,7 @@ const Student = require("../models/Student");
 const { Quiz, QuizAttempt, CourseDetails, Courses } = require("../models/association");
 const Question = require("../models/Quiz/Question");
 const { Op } = require("sequelize");
+const notify = require("../utils/notify");
 
 exports.createQuiz = async (req, res, next) => {
   try {
@@ -42,6 +43,33 @@ exports.createQuiz = async (req, res, next) => {
         })
       )
     );
+
+    // Notify admin (pending) or students (active)
+    if (status === 'pending') {
+      const admins = await Admin.findAll({ attributes: ['id'] });
+      const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : 'A teacher';
+      await Promise.all(
+        admins.map((admin) =>
+          notify({
+            userId: admin.id,
+            userType: 'admin',
+            title: 'Quiz Pending Approval',
+            message: `${teacherName} submitted a quiz "${title}" awaiting your approval.`,
+          })
+        )
+      );
+    } else {
+      await Promise.all(
+        courseDetailsList.map((cd) =>
+          notify({
+            userId: cd.studentId,
+            userType: 'student',
+            title: 'New Quiz Available',
+            message: `A new quiz "${title}" has been assigned to you.`,
+          })
+        )
+      );
+    }
 
     // Return the first quiz (all share the same content)
     res.status(201).json(createdQuizzes[0]);
@@ -454,6 +482,25 @@ exports.approveQuizGroup = async (req, res, next) => {
     });
     await Promise.all(siblings.map(q => q.update({ status: 'active' })));
 
+    // Notify teacher of approval
+    notify({
+      userId: sourceQuiz.teacherId,
+      userType: 'teacher',
+      title: 'Quiz Approved',
+      message: `Your quiz "${sourceQuiz.title}" has been approved and is now visible to students.`,
+    });
+    // Notify each student
+    await Promise.all(
+      siblings.map((q) =>
+        notify({
+          userId: q.studentId,
+          userType: 'student',
+          title: 'New Quiz Available',
+          message: `A new quiz "${sourceQuiz.title}" has been assigned to you.`,
+        })
+      )
+    );
+
     res.status(200).json({ message: 'Quiz approved', count: siblings.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -472,6 +519,13 @@ exports.rejectQuizGroup = async (req, res, next) => {
       where: { teacherId: sourceQuiz.teacherId, title: sourceQuiz.title },
     });
     await Promise.all(siblings.map(q => q.update({ status: 'rejected' })));
+
+    notify({
+      userId: sourceQuiz.teacherId,
+      userType: 'teacher',
+      title: 'Quiz Rejected',
+      message: `Your quiz "${sourceQuiz.title}" was not approved. Please review and resubmit.`,
+    });
 
     res.status(200).json({ message: 'Quiz rejected', count: siblings.length });
   } catch (error) {
