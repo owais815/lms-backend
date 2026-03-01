@@ -32,6 +32,7 @@ const questionBankRoutes = require("./routes/questionBank");
 const classScheduleRoutes = require("./routes/classSchedule");
 const coursePDFRoutes = require("./routes/coursePDF");
 const notificationRoutes = require("./routes/notifications");
+const teacherAttendanceRoutes = require("./routes/teacherAttendance");
 
 
 
@@ -186,6 +187,7 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/questionBank", questionBankRoutes);
 app.use("/api/class-schedule", classScheduleRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/teacher-attendance", teacherAttendanceRoutes);
 
 
 
@@ -246,6 +248,8 @@ async function patchEnumColumns() {
     `ALTER TABLE PlanChangeRequests ADD COLUMN paymentStatus ENUM('pending','paid') DEFAULT 'pending'`,
     // ChatMessages
     `ALTER TABLE ChatMessages ADD COLUMN messageType ENUM('text','voice') NOT NULL DEFAULT 'text'`,
+    // TeacherAttendances
+    `ALTER TABLE TeacherAttendances ADD COLUMN status ENUM('Present','Absent') NOT NULL DEFAULT 'Absent'`,
   ];
   for (const sql of patches) {
     try {
