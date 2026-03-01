@@ -1,7 +1,5 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../utils/database');
-const Student = require('./Student');
-const CourseDetails = require('./CourseDetails');
 
 const Attendance = sequelize.define('Attendance', {
   id: {
@@ -16,11 +14,26 @@ const Attendance = sequelize.define('Attendance', {
   },
   status: {
     type: DataTypes.ENUM('Present', 'Absent'),
-    allowNull: false
+    allowNull: false,
+    defaultValue: 'Present'
+  },
+  studentId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: { model: 'Students', key: 'id' }
+  },
+  courseDetailsId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: { model: 'CourseDetails', key: 'id' }
+  },
+  sessionId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: { model: 'ClassSessions', key: 'id' }
   }
 });
 
-Attendance.belongsTo(Student, { foreignKey: 'studentId' });
-Attendance.belongsTo(CourseDetails, { foreignKey: 'courseId' });
+// Associations are defined in models/association.js
 
 module.exports = Attendance;
