@@ -69,10 +69,11 @@ const ClassSession = sequelize.define('ClassSession', {
     references: { model: 'CourseDetails', key: 'id' },
   },
   // Unique room ID used by the calling-app (e.g. 'lms-42')
+  // Note: unique constraint removed from model to avoid MySQL 64-key limit on alter sync.
+  // Uniqueness is guaranteed by the lms-{id} naming convention.
   roomId: {
     type: DataTypes.STRING,
     allowNull: true,
-    unique: true,
   },
   // Live-call lifecycle — separate from session attendance status
   sessionStatus: {
