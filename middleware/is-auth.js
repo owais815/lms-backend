@@ -1,33 +1,32 @@
 const jwt = require('jsonwebtoken');
 
-module.exports = (req,res,next)=>{
-    const authHeader = req.get('Authorization');
-    if(!authHeader){
-        const error = new Error('Not authenticated.!');
-        error.statusCode = 401;
-        throw error;
-    }
+module.exports = (req, res, next) => {
+  const authHeader = req.get('Authorization');
+  if (!authHeader) {
+    const error = new Error('Not authenticated.!');
+    error.statusCode = 401;
+    throw error;
+  }
 
-    const token = authHeader.split(' ')[1];
-    let decodedToken;
+  const token = authHeader.split(' ')[1];
+  let decodedToken;
 
-    try{
+  try {
+    decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (err) {
+    err.statusCode = 500;
+    throw err;
+  }
 
-        decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+  if (!decodedToken) {
+    const error = new Error('Not authenticated...!!!');
+    error.statusCode = 401;
+    throw error;
+  }
 
-    }catch(err){
-        err.statusCode = 500;
-        throw err;
-    }
-    if(!decodedToken){
-        let error = new Error("Not authenticated...!!!");
-        error.statusCode = 401;
-        throw error;
-    }
+  req.userId   = decodedToken.userId;
+  req.userType = decodedToken.userType || null;  // 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT'
+  req.roleId   = decodedToken.roleId   || null;  // Only set for ADMIN users
 
-    req.userId = decodedToken.userId;
-    next();
-//end of file
-
-
-}
+  next();
+};
