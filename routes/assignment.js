@@ -1,31 +1,27 @@
 const express = require('express');
-const {body} = require('express-validator');
 const assignmentController = require('../controllers/assignment');
+const isAuth = require('../middleware/is-auth');
+const checkPermission = require('../middleware/check-permission');
+const { PERMISSIONS } = require('../config/permissions');
 
 const router = express.Router();
-//when teacher creates assignment
-router.post('/create',  assignmentController.createAssignment);
-//update an existing assignment
-router.put('/update/:assignmentId', assignmentController.updateAssignment);
-//approve a pending assignment (admin only)
-router.post('/approve/:id', assignmentController.approveAssignment);
-//reject a pending assignment (admin only)
-router.post('/reject/:id', assignmentController.rejectAssignment);
-//get all assignments for admin view
-router.get('/admin/all', assignmentController.getAllAssignmentsAdmin);
-//submit assignment(when student submits his/her assignment)
-router.post('/submit',  assignmentController.submitAssignment);
-//assign grade to student for specific assignment
-router.post('/grade',  assignmentController.gradeAssignment);
-//get assignments that are assigned to student
-router.get('/student/:studentId',  assignmentController.getStudentAssignments);
-//get only assignments that are submitted to teacher
-router.get('/teacher/:teacherId',  assignmentController.getTeacherAssignments);
-//get All Assignments assigned to teacher
-router.get('/allAssignments/:teacherId',  assignmentController.getAllAssignmentsTeacher);
-//delete assignment that teacher created
-router.delete('/:assignmentId',assignmentController.deleteAssignmentFile);
-//delete submitted assignments(that student submits & teacher graded already)
-router.delete('/submittedAssignment/:submittedAssignmentId',assignmentController.deleteSubmittedAssignmentFile);
+
+// ─── Teacher-facing routes ────────────────────────────────────────────────────
+router.post('/create',                                      isAuth, assignmentController.createAssignment);
+router.put('/update/:assignmentId',                         isAuth, assignmentController.updateAssignment);
+router.get('/teacher/:teacherId',                           isAuth, assignmentController.getTeacherAssignments);
+router.get('/allAssignments/:teacherId',                    isAuth, assignmentController.getAllAssignmentsTeacher);
+router.post('/grade',                                       isAuth, assignmentController.gradeAssignment);
+router.delete('/:assignmentId',                             isAuth, assignmentController.deleteAssignmentFile);
+router.delete('/submittedAssignment/:submittedAssignmentId', isAuth, assignmentController.deleteSubmittedAssignmentFile);
+
+// ─── Student-facing routes ───────────────────────────────────────────────────
+router.post('/submit',                                      isAuth, assignmentController.submitAssignment);
+router.get('/student/:studentId',                           isAuth, assignmentController.getStudentAssignments);
+
+// ─── Admin-only routes ───────────────────────────────────────────────────────
+router.post('/approve/:id',  isAuth, checkPermission(PERMISSIONS.ASSIGNMENTS_APPROVE), assignmentController.approveAssignment);
+router.post('/reject/:id',   isAuth, checkPermission(PERMISSIONS.ASSIGNMENTS_APPROVE), assignmentController.rejectAssignment);
+router.get('/admin/all',     isAuth, checkPermission(PERMISSIONS.ASSIGNMENTS_VIEW),    assignmentController.getAllAssignmentsAdmin);
 
 module.exports = router;
