@@ -1,38 +1,33 @@
 const express = require('express');
 const { body } = require('express-validator');
 const attendanceController = require('../controllers/attendance');
+const isAuth = require('../middleware/is-auth');
+const checkPermission = require('../middleware/check-permission');
+const { PERMISSIONS } = require('../config/permissions');
+
 const router = express.Router();
 
-// Legacy: mark single attendance
+// ─── Legacy routes (teacher / admin) ─────────────────────────────────────────
 router.post('/mark', [
   body('studentId').isInt(),
   body('courseDetailsId').isInt(),
   body('date').isDate(),
-  body('status').isIn(['Present', 'Absent'])
-], attendanceController.markAttendance);
+  body('status').isIn(['Present', 'Absent']),
+], isAuth, attendanceController.markAttendance);
 
-// Legacy: check today's attendance status
-router.post('/getStatus', attendanceController.checkAttendanceStatus);
+router.post('/getStatus',              isAuth, attendanceController.checkAttendanceStatus);
+router.get('/course/:courseDetailsId', isAuth, attendanceController.getCourseAttendance);
 
-// Legacy: get all attendance for a course
-router.get('/course/:courseDetailsId', attendanceController.getCourseAttendance);
+// ─── Session-based routes ─────────────────────────────────────────────────────
+router.post('/bulk-mark',              isAuth, checkPermission(PERMISSIONS.ATTENDANCE_MARK), attendanceController.bulkMarkAttendance);
+router.get('/session/:sessionId',      isAuth, attendanceController.getSessionAttendanceSheet);
+router.get('/teacher/:teacherId/sessions', isAuth, attendanceController.getTeacherSessions);
 
-// Session-based: bulk mark attendance for a session
-router.post('/bulk-mark', attendanceController.bulkMarkAttendance);
+// ─── Student-facing routes ───────────────────────────────────────────────────
+router.get('/student/:studentId/summary', isAuth, attendanceController.getStudentAttendanceSummary);
+router.get('/student/:studentId',         isAuth, attendanceController.getStudentAttendance);
 
-// Session-based: get attendance sheet for a session (students + existing status)
-router.get('/session/:sessionId', attendanceController.getSessionAttendanceSheet);
-
-// Teacher: get their sessions for the dropdown
-router.get('/teacher/:teacherId/sessions', attendanceController.getTeacherSessions);
-
-// Student: per-course attendance summary with percentages
-router.get('/student/:studentId/summary', attendanceController.getStudentAttendanceSummary);
-
-// Student: full attendance history (with optional filters)
-router.get('/student/:studentId', attendanceController.getStudentAttendance);
-
-// Admin: filtered overview of all student attendance
-router.get('/admin/students', attendanceController.getAdminStudentAttendance);
+// ─── Admin-only routes ───────────────────────────────────────────────────────
+router.get('/admin/students', isAuth, checkPermission(PERMISSIONS.ATTENDANCE_VIEW), attendanceController.getAdminStudentAttendance);
 
 module.exports = router;
