@@ -5,6 +5,7 @@ const Admin = require("../models/Admin");
 const Role = require("../models/Roles");
 const Rights = require("../models/Rights");
 const AdminRights = require("../models/AdminRights");
+const RolesRights = require("../models/RolesRights");
 
 exports.signup= (req,res,next)=>{
     const errors = validationResult(req);
@@ -126,61 +127,70 @@ exports.addAdminRights= async (req,res,next)=>{
     }
 }
 
-exports.login = (req, res, next) => {
+exports.login = async (req, res, next) => {
     const username = req.body.username;
     const password = req.body.password;
-    let loggedIn;
 
-    Admin.findOne({ where: { username: username }, include: [{ model: Role, as: 'Role' }] })
-        .then(user => {
-            if (!user) {
-                const error = new Error('No account found with that username.');
-                error.statusCode = 401;
-                throw error;
-            }
-            loggedIn = user;
-            return bcrypt.compare(password, user.password);
-        })
-        .then(isEqual => {
-            if (!isEqual) {
-                const error = new Error('Incorrect password.');
-                error.statusCode = 401;
-                throw error;
-            }
-
-            const token = jwt.sign(
-                { userId: loggedIn.id.toString(), username: loggedIn.username },
-                process.env.JWT_SECRET,
-                { expiresIn: '1h' }
-            );
-
-            const role = loggedIn.Role
-                ? {
-                    id: String(loggedIn.Role.id),
-                    name: loggedIn.Role.role,
-                    description: null,
-                    isSystem: true,
-                    isActive: true,
-                }
-                : null;
-
-            res.status(200).json({
-                token,
-                user: {
-                    id: String(loggedIn.id),
-                    email: loggedIn.email || null,
-                    username: loggedIn.username,
-                    role,
-                    permissions: [],
-                    isActive: true,
-                    profileImg: loggedIn.profileImg || null,
-                },
-            });
-        })
-        .catch(err => {
-            if (!err?.statusCode) {
-                err.statusCode = 500;
-            }
-            next(err);
+    try {
+        const user = await Admin.findOne({
+            where: { username },
+            include: [{ model: Role }],
         });
+
+        if (!user) {
+            const error = new Error('No account found with that username.');
+            error.statusCode = 401;
+            throw error;
+        }
+
+        const isEqual = await bcrypt.compare(password, user.password);
+        if (!isEqual) {
+            const error = new Error('Incorrect password.');
+            error.statusCode = 401;
+            throw error;
+        }
+
+        // Fetch real permissions for this role
+        const rightsRows = user.roleId
+            ? await RolesRights.findAll({ where: { roleId: user.roleId }, attributes: ['rights'] })
+            : [];
+        const permissions = rightsRows.map(r => r.rights);
+
+        const token = jwt.sign(
+            {
+                userId:   user.id.toString(),
+                username: user.username,
+                userType: 'ADMIN',
+                roleId:   user.roleId || null,
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        const role = user.Role
+            ? {
+                id:          String(user.Role.id),
+                name:        user.Role.role,
+                description: null,
+                isSystem:    true,
+                isActive:    true,
+            }
+            : null;
+
+        res.status(200).json({
+            token,
+            user: {
+                id:         String(user.id),
+                email:      user.email || null,
+                username:   user.username,
+                role,
+                permissions,
+                isActive:   true,
+                profileImg: user.profileImg || null,
+            },
+        });
+    } catch (err) {
+        if (!err?.statusCode) err.statusCode = 500;
+        next(err);
+    }
 };
