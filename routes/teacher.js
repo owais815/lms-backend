@@ -1,69 +1,74 @@
 const express = require('express');
-const {body} = require('express-validator');
+const { body } = require('express-validator');
 const teacherController = require('../controllers/teacher');
 const Teacher = require('../models/Teacher');
 const { loginRateLimiter } = require('../middleware/rateLimiter');
+const isAuth = require('../middleware/is-auth');
+const checkPermission = require('../middleware/check-permission');
+const { PERMISSIONS } = require('../config/permissions');
 
 const router = express.Router();
 
-router.put('/signup',[
-    body('email').isEmail().withMessage("Please enter a valid email.").custom((value,{req})=>{
-        return Teacher.findOne({where:{email:value}}).then(userObj=>{
-            if(userObj){
-                return Promise.reject("E-mail already exist.!");
-            }
-        })
-    }).normalizeEmail(),
-    // email validation ends here
-    body('username').trim().isLength({min:3}).custom((value,{req})=>{
-        return Teacher.findOne({where:{username:value}}).then(userObj=>{
-            if(userObj){
-                return Promise.reject("Username already exist.!");
-            }
-        })
-    }),
-    body('password').trim().isLength({min:5}),
-    body('firstName').trim().not().isEmpty()
-],teacherController.signup);
+// ─── Public routes ───────────────────────────────────────────────────────────
 
+router.put('/signup', [
+  body('email').isEmail().withMessage('Please enter a valid email.').custom((value) => {
+    return Teacher.findOne({ where: { email: value } }).then(userObj => {
+      if (userObj) return Promise.reject('E-mail already exist.!');
+    });
+  }).normalizeEmail(),
+  body('username').trim().isLength({ min: 3 }).custom((value) => {
+    return Teacher.findOne({ where: { username: value } }).then(userObj => {
+      if (userObj) return Promise.reject('Username already exist.!');
+    });
+  }),
+  body('password').trim().isLength({ min: 5 }),
+  body('firstName').trim().not().isEmpty(),
+], teacherController.signup);
 
 router.post('/login', loginRateLimiter, teacherController.login);
-router.put('/update/:teacherId',teacherController.update);
-router.delete('/:teacherId',teacherController.delete);
-router.get('/teachers', teacherController.getAllTeachers);
-router.get('/getById/:teacherId', teacherController.getTeacherById);
-router.post('/getByUsername', teacherController.getTeacherByUsername);
-router.post('/getAssignedStudents', teacherController.getAssignedStudents);
-router.post('/getAssignedTeachers', teacherController.getAssignedTeachers);
 
-router.post('/upload-image', teacherController.uploadImage);
-router.get('/profileImage/:teacherId', teacherController.getProfileImage);
-//Teacher Qualifications
-router.post('/qualifications', teacherController.createQualification);
-router.get('/qualifications/:teacherId', teacherController.getQualifications);
-router.get('/qualifications/:qualificationId', teacherController.getQualification);
-router.put('/qualifications/:qualificationId', teacherController.updateQualification);
-router.delete('/qualifications/:qualificationId', teacherController.deleteQualification);
-//Specialization
-router.post('/specializations', teacherController.addSpecialization);
-router.get('/specializations/:teacherId', teacherController.getSpecializations);
-router.put('/specializations/:specializationId', teacherController.updateSpecialization);
-router.delete('/specializations/:specializationId', teacherController.removeSpecialization);
-// Feedback routes
-router.get('/feedback/:teacherId', teacherController.getFeedback);
-router.post('/feedback', teacherController.addFeedback);
-router.post('/feedback/respond/:feedbackId', teacherController.respondToFeedback);
-// Class metrics routes
-router.get('/class-metrics/:teacherId', teacherController.getClassMetrics);
-// Upcoming classes routes getMeetingLink
-router.get('/upcoming-classes/:teacherId', teacherController.getUpcomingClasses);
-router.get('/all-upcoming-classes', teacherController.getAllUpcomingClasses);
-router.post('/upcoming-classes',teacherController.addUpcomingClass);
-router.post('/getMeetingLink',teacherController.getMeetingLink);
-router.delete('/upcoming-classes/:meetingId',teacherController.cancelUpcomingClass);
-router.get('/getCountsForProfile/:teacherId',teacherController.getCountTeacherProfileData);
-router.get('/count',teacherController.countAllTeachers);
+// ─── Admin-only routes ───────────────────────────────────────────────────────
 
+router.get('/teachers',    isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.getAllTeachers);
+router.get('/count',       isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.countAllTeachers);
+router.delete('/:teacherId', isAuth, checkPermission(PERMISSIONS.TEACHERS_DELETE), teacherController.delete);
 
+// ─── Authenticated routes (teacher or admin) ─────────────────────────────────
+
+router.put('/update/:teacherId',                      isAuth, teacherController.update);
+router.get('/getById/:teacherId',                     isAuth, teacherController.getTeacherById);
+router.post('/getByUsername',                         isAuth, teacherController.getTeacherByUsername);
+router.post('/getAssignedStudents',                   isAuth, teacherController.getAssignedStudents);
+router.post('/getAssignedTeachers',                   isAuth, teacherController.getAssignedTeachers);
+router.post('/upload-image',                          isAuth, teacherController.uploadImage);
+router.get('/profileImage/:teacherId',                isAuth, teacherController.getProfileImage);
+
+// Qualifications
+router.post('/qualifications',                        isAuth, teacherController.createQualification);
+router.get('/qualifications/:teacherId',              isAuth, teacherController.getQualifications);
+router.get('/qualifications/:qualificationId',        isAuth, teacherController.getQualification);
+router.put('/qualifications/:qualificationId',        isAuth, teacherController.updateQualification);
+router.delete('/qualifications/:qualificationId',     isAuth, teacherController.deleteQualification);
+
+// Specializations
+router.post('/specializations',                       isAuth, teacherController.addSpecialization);
+router.get('/specializations/:teacherId',             isAuth, teacherController.getSpecializations);
+router.put('/specializations/:specializationId',      isAuth, teacherController.updateSpecialization);
+router.delete('/specializations/:specializationId',   isAuth, teacherController.removeSpecialization);
+
+// Feedback
+router.get('/feedback/:teacherId',                    isAuth, teacherController.getFeedback);
+router.post('/feedback',                              isAuth, teacherController.addFeedback);
+router.post('/feedback/respond/:feedbackId',          isAuth, teacherController.respondToFeedback);
+
+// Class management
+router.get('/class-metrics/:teacherId',               isAuth, teacherController.getClassMetrics);
+router.get('/upcoming-classes/:teacherId',            isAuth, teacherController.getUpcomingClasses);
+router.get('/all-upcoming-classes',                   isAuth, teacherController.getAllUpcomingClasses);
+router.post('/upcoming-classes',                      isAuth, teacherController.addUpcomingClass);
+router.post('/getMeetingLink',                        isAuth, teacherController.getMeetingLink);
+router.delete('/upcoming-classes/:meetingId',         isAuth, teacherController.cancelUpcomingClass);
+router.get('/getCountsForProfile/:teacherId',         isAuth, teacherController.getCountTeacherProfileData);
 
 module.exports = router;
