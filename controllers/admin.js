@@ -1065,3 +1065,32 @@ exports.getUserRights = async (req, res) => {
         res.status(500).json({ message: "Error fetching user rights", error: error.message });
     }
 };
+
+// Delete a role (and its rights)
+exports.deleteRole = async (req, res, next) => {
+    try {
+        const { roleId } = req.params;
+
+        const role = await Role.findByPk(roleId);
+        if (!role) {
+            return res.status(404).json({ message: 'Role not found.' });
+        }
+
+        // Check if any admin is using this role
+        const adminCount = await Admin.count({ where: { roleId } });
+        if (adminCount > 0) {
+            return res.status(400).json({
+                message: `Cannot delete role: ${adminCount} admin(s) are currently assigned to it.`,
+            });
+        }
+
+        // Delete all rights for this role, then delete the role
+        await RolesRights.destroy({ where: { roleId } });
+        await role.destroy();
+
+        res.status(200).json({ message: 'Role deleted successfully.' });
+    } catch (err) {
+        if (!err.statusCode) err.statusCode = 500;
+        next(err);
+    }
+};
