@@ -1,56 +1,31 @@
 const express = require('express');
-const {body} = require('express-validator');
 const quizController = require('../controllers/quiz');
+const isAuth = require('../middleware/is-auth');
+const checkPermission = require('../middleware/check-permission');
+const { PERMISSIONS } = require('../config/permissions');
 
 const router = express.Router();
 
-// Create a new quiz
-router.post('/quizzes',quizController.createQuiz);
+// ─── Teacher-facing routes ────────────────────────────────────────────────────
+router.post('/quizzes',                                isAuth, quizController.createQuiz);
+router.put('/assign',                                  isAuth, quizController.assignCourseAndStudentToQuiz);
+router.post('/quizzes/:quizId/questions',              isAuth, quizController.AddQuestionToQuiz);
+router.get('/quizzes/:quizId',                         isAuth, quizController.getQuizWithQuestion);
+router.get('/quizzesByTeacher/:teacherId',             isAuth, quizController.getQuizWithTeachers);
+router.delete('/quizzes/:quizId',                      isAuth, quizController.deleteQuiz);
+router.delete('/quizGroup/:quizId',                    isAuth, quizController.deleteQuizGroup);
+router.delete('/quizzes/questions/:questionId',        isAuth, quizController.deleteQuestion);
+router.put('/update/:quizId',                          isAuth, quizController.updateQuizGroup);
 
-//Assign Quiz to student
-router.put('/assign',quizController.assignCourseAndStudentToQuiz);
+// ─── Student-facing routes ───────────────────────────────────────────────────
+router.post('/quiz-attempts',                          isAuth, quizController.startQuizAttempt);
+router.put('/quiz-attempts/:attemptId',               isAuth, quizController.submitQuizAttempt);
+router.get('/student/:studentId/quizzes',              isAuth, quizController.getStudentQuizzes);
+router.get('/student/:studentId/quiz-attempts/:quizId', isAuth, quizController.checkIfStudentHasAttemptedQuiz);
 
-  
-  // Add a question to a quiz
-  router.post('/quizzes/:quizId/questions',quizController.AddQuestionToQuiz);
-  
-  // Get a quiz with its questions
-  router.get('/quizzes/:quizId', quizController.getQuizWithQuestion);
-  
-   // Get a quiz with teacher Id
-   router.get('/quizzesByTeacher/:teacherId', quizController.getQuizWithTeachers);
-
-  // Start a quiz attempt
-  router.post('/quiz-attempts', quizController.startQuizAttempt);
-  
-  // Submit a quiz attempt
-  router.put('/quiz-attempts/:attemptId', quizController.submitQuizAttempt);
-
-  //delete a quiz
-  router.delete('/quizzes/:quizId',quizController.deleteQuiz);
-
-  //delete all sibling quizzes (same teacher + title group) — used by teacher to remove a quiz from all students
-  router.delete('/quizGroup/:quizId', quizController.deleteQuizGroup);
-
-  //delete a question
-  router.delete('/quizzes/questions/:questionId',quizController.deleteQuestion);
-
-  //get quizes for student
-  router.get('/student/:studentId/quizzes', quizController.getStudentQuizzes);
-
-  //check if a student has attempted a quiz
-  router.get('/student/:studentId/quiz-attempts/:quizId', quizController.checkIfStudentHasAttemptedQuiz);
-
-  //update quiz group (teacher edits title/instructions/duration/passingScore)
-  router.put('/update/:quizId', quizController.updateQuizGroup);
-
-  //approve a quiz group (admin only)
-  router.post('/approve/:quizId', quizController.approveQuizGroup);
-
-  //reject a quiz group (admin only)
-  router.post('/reject/:quizId', quizController.rejectQuizGroup);
-
-  //get all quiz groups for admin view
-  router.get('/admin/all', quizController.getAllQuizzesAdmin);
+// ─── Admin-only routes ───────────────────────────────────────────────────────
+router.post('/approve/:quizId',  isAuth, checkPermission(PERMISSIONS.QUIZZES_APPROVE), quizController.approveQuizGroup);
+router.post('/reject/:quizId',   isAuth, checkPermission(PERMISSIONS.QUIZZES_APPROVE), quizController.rejectQuizGroup);
+router.get('/admin/all',         isAuth, checkPermission(PERMISSIONS.QUIZZES_VIEW),    quizController.getAllQuizzesAdmin);
 
 module.exports = router;
