@@ -1,86 +1,81 @@
 const express = require('express');
-const {body} = require('express-validator');
+const { body } = require('express-validator');
 const adminController = require('../controllers/admin');
 const Admin = require('../models/Admin');
-const Student = require('../models/Student');
-const Teacher = require('../models/Teacher');
+const isAuth = require('../middleware/is-auth');
+const checkPermission = require('../middleware/check-permission');
+const { PERMISSIONS } = require('../config/permissions');
 
 const router = express.Router();
 
-router.put('/signup',[
-    body('email').isEmail().withMessage("Please enter a valid email.").custom((value,{req})=>{
-        return Admin.findOne({where:{email:value}}).then(userObj=>{
-            if(userObj){
-                return Promise.reject("E-mail already exist.!");
-            }
-        })
-    }).normalizeEmail(),
-    // email validation ends here
-    body('username').trim().isLength({min:5}).custom((value,{req})=>{
-        return Admin.findOne({where:{username:value}}).then(userObj=>{
-            if(userObj){
-                return Promise.reject("Username already exist.!");
-            }
-        })
-    }),
-    body('password').trim().isLength({min:5}),
-    body('name').trim().not().isEmpty()
-],adminController.signup);
+// ─── Public routes (no auth required) ───────────────────────────────────────
 
+router.put('/signup', [
+  body('email').isEmail().withMessage('Please enter a valid email.').custom((value) => {
+    return Admin.findOne({ where: { email: value } }).then(userObj => {
+      if (userObj) return Promise.reject('E-mail already exist.!');
+    });
+  }).normalizeEmail(),
+  body('username').trim().isLength({ min: 5 }).custom((value) => {
+    return Admin.findOne({ where: { username: value } }).then(userObj => {
+      if (userObj) return Promise.reject('Username already exist.!');
+    });
+  }),
+  body('password').trim().isLength({ min: 5 }),
+  body('name').trim().not().isEmpty(),
+], adminController.signup);
 
-router.post('/login',adminController.login);
-router.put('/update/:adminId',adminController.update);
-router.delete('/:adminId',adminController.delete);
-router.get('/teachers', adminController.getAllAdmins);
-// router.get('/:adminId', adminController.getAdminById);
-router.post('/getByUsername', adminController.getAdminByUsername);
-router.post('/assignTeacher',adminController.assignTeacher);
-router.post('/changeTeacherPassword',adminController.updateTeacherPasswordByUsername);
-router.post('/changeStudentPassword',adminController.updateStudentPasswordByUsername);
-router.post('/changeParentPassword',adminController.updateParentPasswordByUsername);
+router.post('/login', adminController.login);
 
-router.post('/changePassword',adminController.updatePassword
-    
-);
+// ─── Protected routes ────────────────────────────────────────────────────────
 
-//Course CRUD
-router.post('/addCourse',adminController.addCourse);
-router.get('/getAllCourses',adminController.getAllCourses);
-router.get('/getAllCoursesUpcoming',adminController.getAllCoursesUpcoming);
+// Admin profile management
+router.put('/update/:adminId',     isAuth, adminController.update);
+router.delete('/:adminId',         isAuth, adminController.delete);
+router.get('/teachers',            isAuth, adminController.getAllAdmins);
+router.post('/getByUsername',      isAuth, adminController.getAdminByUsername);
 
-// router.get('/getCourseById/:courseId',adminController.getCourseById); getAllCoursesUpcoming
-router.put('/updateCourse/:courseId',adminController.updateCourse);
-router.delete('/deleteCourse/:courseId',adminController.deleteCourse);
-//announcements
-router.post('/announcement',adminController.createAnnouncement);
-router.post('/getAnnouncements',adminController.getAnnouncements);
-router.get('/getAllAnnouncements',adminController.getAllAnnouncements);
-//deleteannouncement
-router.delete('/deleteannouncement/:announcementId',adminController.deleteAnnouncement);
+// Password management (admin-only, full admins bypass, sub-admins need students/teachers/parents:edit)
+router.post('/changePassword',         isAuth, adminController.updatePassword);
+router.post('/changeTeacherPassword',  isAuth, checkPermission(PERMISSIONS.TEACHERS_EDIT), adminController.updateTeacherPasswordByUsername);
+router.post('/changeStudentPassword',  isAuth, checkPermission(PERMISSIONS.STUDENTS_EDIT), adminController.updateStudentPasswordByUsername);
+router.post('/changeParentPassword',   isAuth, checkPermission(PERMISSIONS.PARENTS_EDIT),  adminController.updateParentPasswordByUsername);
 
-//get next four hours classes
-router.get('/getNextFourHoursClasses',adminController.getNextFourHoursClasses);
-// getFreeTimeSlots
-router.get('/getFreeTimeSlots/:teacherId/:timeRange', adminController.getFreeTimeSlots);
+// Teacher assignment
+router.post('/assignTeacher', isAuth, checkPermission(PERMISSIONS.TEACHERS_EDIT), adminController.assignTeacher);
 
-//roles
-router.get('/getAllRoles',adminController.getRoles);
-router.post('/createRole',adminController.createRole);
-router.put('/updateRole/:roleId',adminController.updateRole);
-// router.post('/addRight',adminController.addRight);
+// Course CRUD
+router.post('/addCourse',                    isAuth, checkPermission(PERMISSIONS.COURSES_CREATE), adminController.addCourse);
+router.get('/getAllCourses',                  isAuth, checkPermission(PERMISSIONS.COURSES_VIEW),   adminController.getAllCourses);
+router.get('/getAllCoursesUpcoming',          isAuth, checkPermission(PERMISSIONS.COURSES_VIEW),   adminController.getAllCoursesUpcoming);
+router.put('/updateCourse/:courseId',        isAuth, checkPermission(PERMISSIONS.COURSES_EDIT),   adminController.updateCourse);
+router.delete('/deleteCourse/:courseId',     isAuth, checkPermission(PERMISSIONS.COURSES_DELETE), adminController.deleteCourse);
 
-//RBAC
-router.post('/createAdmin', adminController.createAdmin);
-router.get('/getAllAdminUsers', adminController.getAllAdminUsers);
-// router.get('/admins/:id', adminController.getAdminById);
-router.put('/updateAdmin/:id', adminController.updateAdmin);
-router.delete('/deleteAdmin/:id', adminController.deleteAdmin);
+// Announcements
+router.post('/announcement',                       isAuth, checkPermission(PERMISSIONS.ANNOUNCEMENTS_CREATE), adminController.createAnnouncement);
+router.post('/getAnnouncements',                   isAuth, checkPermission(PERMISSIONS.ANNOUNCEMENTS_VIEW),   adminController.getAnnouncements);
+router.get('/getAllAnnouncements',                  isAuth, checkPermission(PERMISSIONS.ANNOUNCEMENTS_VIEW),   adminController.getAllAnnouncements);
+router.delete('/deleteannouncement/:announcementId', isAuth, checkPermission(PERMISSIONS.ANNOUNCEMENTS_DELETE), adminController.deleteAnnouncement);
 
-router.post('/assign-rights', adminController.assignRightsToRole);
-router.get('/rights/:roleId', adminController.getRightsByRole);
-router.get('/user-rights/:roleId', adminController.getUserRights);
+// Class scheduling
+router.get('/getNextFourHoursClasses',                 isAuth, checkPermission(PERMISSIONS.SCHEDULE_VIEW),   adminController.getNextFourHoursClasses);
+router.get('/getFreeTimeSlots/:teacherId/:timeRange',   isAuth, checkPermission(PERMISSIONS.SCHEDULE_VIEW),   adminController.getFreeTimeSlots);
 
+// Role management (roles:view / roles:manage)
+router.get('/getAllRoles',          isAuth, checkPermission(PERMISSIONS.ROLES_VIEW),   adminController.getRoles);
+router.post('/createRole',         isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.createRole);
+router.put('/updateRole/:roleId',  isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.updateRole);
+router.delete('/role/:roleId',     isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.deleteRole);
 
+// Admin user management
+router.post('/createAdmin',        isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.createAdmin);
+router.get('/getAllAdminUsers',     isAuth, checkPermission(PERMISSIONS.ROLES_VIEW),   adminController.getAllAdminUsers);
+router.put('/updateAdmin/:id',     isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.updateAdmin);
+router.delete('/deleteAdmin/:id',  isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.deleteAdmin);
 
+// Rights / permissions assignment
+router.post('/assign-rights',       isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.assignRightsToRole);
+router.get('/rights/:roleId',       isAuth, checkPermission(PERMISSIONS.ROLES_VIEW),   adminController.getRightsByRole);
+router.get('/user-rights/:roleId',  isAuth, adminController.getUserRights);
 
 module.exports = router;
