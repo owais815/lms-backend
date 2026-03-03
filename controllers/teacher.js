@@ -906,3 +906,43 @@ exports.countAllTeachers = (req, res, next) => {
       next(err);
     });
 };
+
+exports.getDashboardStats = async (req, res, next) => {
+  try {
+    const teacherId = req.params.teacherId;
+
+    // Unique courses this teacher teaches
+    const totalCourses = await CourseDetails.count({
+      distinct: true,
+      col: 'courseId',
+      where: { teacherId },
+    });
+
+    // Unique students this teacher has
+    const totalStudents = await CourseDetails.count({
+      distinct: true,
+      col: 'studentId',
+      where: { teacherId },
+    });
+
+    // Submitted assignments waiting for teacher review
+    const pendingReview = await SubmittedAssignment.count({
+      where: { teacherId, status: 'Submitted' },
+    });
+
+    // Active quizzes created by this teacher
+    const activeQuizzes = await Quiz.count({
+      where: { teacherId, status: 'active' },
+    });
+
+    res.status(200).json({
+      totalCourses,
+      totalStudents,
+      pendingReview,
+      activeQuizzes,
+    });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};
