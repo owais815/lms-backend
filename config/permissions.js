@@ -71,6 +71,10 @@ const PERMISSIONS = {
 
   // Session Feedback
   FEEDBACK_VIEW:   'feedback:view',
+
+  // Subscription Plans
+  PLANS_VIEW:   'plans:view',
+  PLANS_MANAGE: 'plans:manage',
 };
 
 // Roles that bypass all permission checks
