@@ -1066,6 +1066,64 @@ exports.getUserRights = async (req, res) => {
     }
 };
 
+// Dashboard Stats
+exports.getDashboardStats = async (_req, res, next) => {
+    try {
+        const Payment = require('../models/Payment');
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+        const pctChange = (current, previous) => {
+            if (previous === 0) return current > 0 ? 100 : 0;
+            return Math.round(((current - previous) / previous) * 100);
+        };
+
+        // ── Teachers ──────────────────────────────────────
+        const totalTeachers = await Teacher.count();
+        const newTeachersLast7 = await Teacher.count({ where: { createdAt: { [Op.gte]: sevenDaysAgo } } });
+        const prevTeachers = await Teacher.count({ where: { createdAt: { [Op.between]: [fourteenDaysAgo, sevenDaysAgo] } } });
+
+        // ── Students ──────────────────────────────────────
+        const totalStudents = await Student.count();
+        const newStudentsLast7 = await Student.count({ where: { createdAt: { [Op.gte]: sevenDaysAgo } } });
+        const prevStudents = await Student.count({ where: { createdAt: { [Op.between]: [fourteenDaysAgo, sevenDaysAgo] } } });
+
+        // ── Courses ───────────────────────────────────────
+        const totalCourses = await Courses.count();
+        const newCoursesLast7 = await Courses.count({ where: { createdAt: { [Op.gte]: sevenDaysAgo } } });
+        const prevCourses = await Courses.count({ where: { createdAt: { [Op.between]: [fourteenDaysAgo, sevenDaysAgo] } } });
+
+        // ── Fees ──────────────────────────────────────────
+        const [totalFeesRow, last7FeesRow, prev7FeesRow] = await Promise.all([
+            Payment.findOne({ attributes: [[Sequelize.fn('SUM', Sequelize.col('amount')), 'total']] }),
+            Payment.findOne({ attributes: [[Sequelize.fn('SUM', Sequelize.col('amount')), 'total']], where: { paymentDate: { [Op.gte]: sevenDaysAgo } } }),
+            Payment.findOne({ attributes: [[Sequelize.fn('SUM', Sequelize.col('amount')), 'total']], where: { paymentDate: { [Op.between]: [fourteenDaysAgo, sevenDaysAgo] } } }),
+        ]);
+        const totalFees = parseFloat(totalFeesRow?.dataValues?.total || 0);
+        const last7Fees = parseFloat(last7FeesRow?.dataValues?.total || 0);
+        const prev7Fees = parseFloat(prev7FeesRow?.dataValues?.total || 0);
+
+        // ── Enrollment breakdown ──────────────────────────
+        const activeStudents = await Student.count({ where: { status: 'active' } });
+        const droppedStudents = await Student.count({ where: { status: 'inactive' } });
+        const studentsWithCourses = await CourseDetails.count({ distinct: true, col: 'studentId' });
+        const enrolledActive = Math.min(studentsWithCourses, activeStudents);
+        const pendingStudents = Math.max(0, activeStudents - studentsWithCourses);
+
+        res.status(200).json({
+            teachers: { total: totalTeachers, newInLast7Days: newTeachersLast7, percentChange: pctChange(newTeachersLast7, prevTeachers) },
+            students: { total: totalStudents, newInLast7Days: newStudentsLast7, percentChange: pctChange(newStudentsLast7, prevStudents) },
+            courses:  { total: totalCourses,  newInLast7Days: newCoursesLast7,  percentChange: pctChange(newCoursesLast7, prevCourses) },
+            fees:     { totalCollected: totalFees, last7Days: last7Fees, percentChange: pctChange(last7Fees, prev7Fees) },
+            enrollment: { total: totalStudents, active: enrolledActive, dropped: droppedStudents, pending: pendingStudents },
+        });
+    } catch (err) {
+        if (!err.statusCode) err.statusCode = 500;
+        next(err);
+    }
+};
+
 // Delete a role (and its rights)
 exports.deleteRole = async (req, res, next) => {
     try {
