@@ -38,6 +38,7 @@ router.delete('/:teacherId', isAuth, checkPermission(PERMISSIONS.TEACHERS_DELETE
 
 router.put('/update/:teacherId',                      isAuth, teacherController.update);
 router.get('/getById/:teacherId',                     isAuth, teacherController.getTeacherById);
+router.get('/dashboard-stats/:teacherId',             isAuth, teacherController.getDashboardStats);
 router.post('/getByUsername',                         isAuth, teacherController.getTeacherByUsername);
 router.post('/getAssignedStudents',                   isAuth, teacherController.getAssignedStudents);
 router.post('/getAssignedTeachers',                   isAuth, teacherController.getAssignedTeachers);
