@@ -193,7 +193,7 @@ const getAdminSummary = async (req, res) => {
           attributes: ['id', 'title', 'date', 'teacherId', 'courseId'],
           include: [
             { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
-            { model: Courses, attributes: ['id', 'name'] },
+            { model: Courses, attributes: ['id', 'courseName'] },
           ],
         },
         { model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] },
