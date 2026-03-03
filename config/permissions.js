@@ -68,6 +68,9 @@ const PERMISSIONS = {
   // Roles & Permissions Management (admin-level)
   ROLES_VIEW:      'roles:view',
   ROLES_MANAGE:    'roles:manage',
+
+  // Session Feedback
+  FEEDBACK_VIEW:   'feedback:view',
 };
 
 // Roles that bypass all permission checks
