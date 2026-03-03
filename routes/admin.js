@@ -73,6 +73,9 @@ router.get('/getAllAdminUsers',     isAuth, checkPermission(PERMISSIONS.ROLES_VI
 router.put('/updateAdmin/:id',     isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.updateAdmin);
 router.delete('/deleteAdmin/:id',  isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.deleteAdmin);
 
+// Dashboard stats
+router.get('/dashboard-stats', isAuth, adminController.getDashboardStats);
+
 // Rights / permissions assignment
 router.post('/assign-rights',       isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), adminController.assignRightsToRole);
 router.get('/rights/:roleId',       isAuth, checkPermission(PERMISSIONS.ROLES_VIEW),   adminController.getRightsByRole);
