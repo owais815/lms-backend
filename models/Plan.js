@@ -20,8 +20,19 @@ const Plan = sequelize.define('Plan', {
         allowNull: true,
     },
     features: {
-        type: Sequelize.JSON, // Store as a JSON string
+        type: Sequelize.JSON,
         allowNull: true,
+    },
+    billingCycle: {
+        type: Sequelize.ENUM('monthly', 'quarterly', 'yearly', 'one-time'),
+        allowNull: false,
+        defaultValue: 'monthly',
+    },
+    durationDays: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        defaultValue: 30,
+        comment: 'Number of days the plan is valid',
     },
 });
 
