@@ -30,6 +30,7 @@ const ClassSession = require("./ClassSession");
 const CoursePDF = require("./CoursePDF");
 const TeacherAttendance = require("./TeacherAttendance");
 const SessionFeedback = require("./SessionFeedback");
+const Fee = require("./Fee");
 
 // Setup associations
 Teacher.belongsToMany(Student, {
@@ -156,6 +157,14 @@ PlanChangeRequest.belongsTo(Plan, { foreignKey: 'requestedPlanId', as: 'Requeste
 Student.hasMany(Payment, { foreignKey: 'studentId' });
 Payment.belongsTo(Student, { foreignKey: 'studentId' });
 
+// Fee associations
+Fee.belongsTo(Student, { foreignKey: 'studentId' });
+Fee.belongsTo(Plan, { foreignKey: 'planId' });
+Fee.belongsTo(PlanChangeRequest, { foreignKey: 'planChangeRequestId', as: 'planChangeRequest' });
+Student.hasMany(Fee, { foreignKey: 'studentId' });
+Plan.hasMany(Fee, { foreignKey: 'planId' });
+PlanChangeRequest.hasOne(Fee, { foreignKey: 'planChangeRequestId', as: 'paymentFee' });
+
 // ClassSchedule associations
 ClassSchedule.belongsTo(Courses, { foreignKey: 'courseId' });
 ClassSchedule.belongsTo(Teacher, { foreignKey: 'teacherId' });
@@ -182,6 +191,8 @@ Student.hasMany(SessionFeedback, { foreignKey: 'studentId' });
 
 module.exports = {
   Teacher,
+  Fee,
+  PlanChangeRequest,
   Student,
   TeacherStudent,
   StudentFeedback,

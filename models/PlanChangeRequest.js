@@ -32,7 +32,7 @@ const PlanChangeRequest = sequelize.define('PlanChangeRequest', {
         },
     },
     status: {
-        type: Sequelize.ENUM('pending', 'approved', 'rejected'),
+        type: Sequelize.ENUM('pending', 'approved', 'rejected', 'completed'),
         defaultValue: 'pending',
     },
     paymentStatus: {

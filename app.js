@@ -34,6 +34,7 @@ const coursePDFRoutes = require("./routes/coursePDF");
 const notificationRoutes = require("./routes/notifications");
 const teacherAttendanceRoutes = require("./routes/teacherAttendance");
 const sessionFeedbackRoutes = require("./routes/feedback");
+const feesRoutes = require("./routes/fees");
 
 
 
@@ -41,6 +42,7 @@ const sessionFeedbackRoutes = require("./routes/feedback");
 
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
+const { startOverdueFeesCron } = require('./Schedular/markOverdueFees');
 const isAuth = require('./middleware/is-auth');
 const io =  require('./socket').getIO();
 
@@ -191,6 +193,7 @@ app.use("/api/class-schedule", classScheduleRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/teacher-attendance", teacherAttendanceRoutes);
 app.use("/api/session-feedback", sessionFeedbackRoutes);
+app.use("/api/fees", feesRoutes);
 
 
 
@@ -210,6 +213,7 @@ app.use((error, req, res, next) => {
 
 cleanupAnnouncements();
 startMessageCleanup(io);
+startOverdueFeesCron();
 const port = serverConfig.port || process.env.PORT || 8080;
 const host = serverConfig.host || process.env.HOST || 'localhost';
 // Sequelize alter:true silently drops ENUM columns on MySQL — patch them back after sync
@@ -247,12 +251,14 @@ async function patchEnumColumns() {
     // QuestionBanks
     `ALTER TABLE QuestionBanks ADD COLUMN type ENUM('multiple_choice','true_false','short_answer') NOT NULL DEFAULT 'multiple_choice'`,
     // PlanChangeRequests
-    `ALTER TABLE PlanChangeRequests ADD COLUMN status ENUM('pending','approved','rejected') DEFAULT 'pending'`,
+    `ALTER TABLE PlanChangeRequests ADD COLUMN status ENUM('pending','approved','rejected','completed') DEFAULT 'pending'`,
     `ALTER TABLE PlanChangeRequests ADD COLUMN paymentStatus ENUM('pending','paid') DEFAULT 'pending'`,
     // ChatMessages
     `ALTER TABLE ChatMessages ADD COLUMN messageType ENUM('text','voice') NOT NULL DEFAULT 'text'`,
     // TeacherAttendances
     `ALTER TABLE TeacherAttendances ADD COLUMN status ENUM('Present','Absent') NOT NULL DEFAULT 'Absent'`,
+    // Fees
+    `ALTER TABLE Fees ADD COLUMN status ENUM('pending','paid','overdue','cancelled') NOT NULL DEFAULT 'pending'`,
   ];
   for (const sql of patches) {
     try {
