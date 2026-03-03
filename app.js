@@ -33,6 +33,7 @@ const classScheduleRoutes = require("./routes/classSchedule");
 const coursePDFRoutes = require("./routes/coursePDF");
 const notificationRoutes = require("./routes/notifications");
 const teacherAttendanceRoutes = require("./routes/teacherAttendance");
+const sessionFeedbackRoutes = require("./routes/feedback");
 
 
 
@@ -77,6 +78,7 @@ const {
   UpcomingCourses,
   ClassSchedule,
   ClassSession,
+  SessionFeedback,
 } = require("./models/association");
 
 const allowedOrigins = [
@@ -188,6 +190,7 @@ app.use("/api/questionBank", questionBankRoutes);
 app.use("/api/class-schedule", classScheduleRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/teacher-attendance", teacherAttendanceRoutes);
+app.use("/api/session-feedback", sessionFeedbackRoutes);
 
 
 
