@@ -29,6 +29,7 @@ const ClassSchedule = require("./ClassSchedule");
 const ClassSession = require("./ClassSession");
 const CoursePDF = require("./CoursePDF");
 const TeacherAttendance = require("./TeacherAttendance");
+const SessionFeedback = require("./SessionFeedback");
 
 // Setup associations
 Teacher.belongsToMany(Student, {
@@ -173,6 +174,12 @@ ClassSession.belongsTo(Teacher, { foreignKey: 'teacherId' });
 ClassSession.belongsTo(Student, { foreignKey: 'studentId' });
 ClassSession.belongsTo(CourseDetails, { foreignKey: 'courseDetailsId' });
 
+// SessionFeedback associations
+SessionFeedback.belongsTo(ClassSession, { foreignKey: 'sessionId' });
+SessionFeedback.belongsTo(Student, { foreignKey: 'studentId' });
+ClassSession.hasMany(SessionFeedback, { foreignKey: 'sessionId' });
+Student.hasMany(SessionFeedback, { foreignKey: 'studentId' });
+
 module.exports = {
   Teacher,
   Student,
@@ -199,4 +206,5 @@ module.exports = {
   ClassSession,
   CoursePDF,
   TeacherAttendance,
+  SessionFeedback,
 };
