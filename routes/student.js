@@ -36,6 +36,7 @@ router.put('/update/:studentId',                  isAuth, studentController.upda
 router.post('/getByUsername',                     isAuth, studentController.getStudentByUsername);
 router.get('/getById/:studentId',                 isAuth, studentController.getStudentById);
 router.get('/dashboard/:studentId',               isAuth, studentController.getDashboardData);
+router.get('/dashboard-stats/:studentId',          isAuth, studentController.getDashboardStats);
 router.get('/dashboard/assess/:studentId',        isAuth, studentController.getAssessmentScore);
 router.get('/dashboard/leaderboard/:studentId',   isAuth, studentController.getLeaderboard);
 router.get('/upcoming-classes/:studentId',        isAuth, studentController.getUpcomingClasses);
