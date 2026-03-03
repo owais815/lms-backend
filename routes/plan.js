@@ -2,17 +2,19 @@
 const express = require('express');
 const router = express.Router();
 const planController = require('../controllers/plan');
+const isAuth = require('../middleware/is-auth');
 
-router.get('/plans', planController.getPlans);
-router.post('/students/assign-plan', planController.assignPlan);
-router.get('/students/:studentId/plan', planController.getStudentPlan);
+router.get('/plans', isAuth, planController.getPlans);
+router.post('/students/assign-plan', isAuth, planController.assignPlan);
+router.get('/students/:studentId/plan', isAuth, planController.getStudentPlan);
 
 // Admin routes
-router.post('/add', planController.addPlan); // Add plan
-router.get('/all', planController.getPlans); // View all plans
-router.put('/update/:id', planController.updatePlan); // Update plan
-router.delete('/delete/:id', planController.deletePlan); // Delete plan
-//student
-router.post('/plan-change-requests', planController.createPlanChangeRequest);
+router.post('/add', isAuth, planController.addPlan);
+router.get('/all', isAuth, planController.getPlans);
+router.put('/update/:id', isAuth, planController.updatePlan);
+router.delete('/delete/:id', isAuth, planController.deletePlan);
+
+// Student routes
+router.post('/plan-change-requests', isAuth, planController.createPlanChangeRequest);
 
 module.exports = router;
