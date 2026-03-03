@@ -9,9 +9,9 @@ const Student = require('../models/Student');
 //For Admin 
 // Add a new plan
 exports.addPlan = async (req, res) => {
-    const { name, description, price, features } = req.body;
+    const { name, description, price, features, billingCycle, durationDays } = req.body;
     try {
-        const plan = await Plan.create({ name, description, price, features });
+        const plan = await Plan.create({ name, description, price, features, billingCycle, durationDays });
         res.status(201).json({ success: true, plan });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -31,7 +31,7 @@ exports.getPlans = async (req, res) => {
 // Update a plan
 exports.updatePlan = async (req, res) => {
     const { id } = req.params;
-    const { name, description, price, features } = req.body;
+    const { name, description, price, features, billingCycle, durationDays } = req.body;
 
     try {
         const plan = await Plan.findByPk(id);
@@ -43,6 +43,8 @@ exports.updatePlan = async (req, res) => {
         plan.description = description || plan.description;
         plan.price = price || plan.price;
         plan.features = features || plan.features;
+        if (billingCycle) plan.billingCycle = billingCycle;
+        if (durationDays != null) plan.durationDays = durationDays;
 
         await plan.save();
         res.status(200).json({ success: true, plan });
