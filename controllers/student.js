@@ -685,3 +685,39 @@ exports.countRecentStudents = (req, res, next) => {
       next(err);
     });
 };
+
+exports.getDashboardStats = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+
+    // Enrolled courses
+    const enrolledCourses = await CourseDetails.count({ where: { studentId } });
+
+    // Pending assignments: submissions that haven't been submitted yet
+    const pendingAssignments = await SubmittedAssignment.count({
+      where: { studentId, status: { [Op.in]: ['Not Started', 'In Progress'] } },
+    });
+
+    // Upcoming quizzes: active quizzes assigned to this student
+    const upcomingQuizzes = await Quiz.count({
+      where: { studentId, status: 'active' },
+    });
+
+    // Attendance rate
+    const totalAttendance = await Attendance.count({ where: { studentId } });
+    const presentAttendance = await Attendance.count({ where: { studentId, status: 'Present' } });
+    const attendanceRate = totalAttendance > 0
+      ? Math.round((presentAttendance / totalAttendance) * 100)
+      : 0;
+
+    res.status(200).json({
+      enrolledCourses,
+      pendingAssignments,
+      upcomingQuizzes,
+      attendanceRate,
+    });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};
