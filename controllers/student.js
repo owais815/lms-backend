@@ -182,6 +182,7 @@ exports.delete = (req, res, next) => {
 exports.update = (req, res, next) => {
   const { studentId } = req.params;
   const {
+    username,
     firstName,
     lastName,
     password,
@@ -201,6 +202,9 @@ exports.update = (req, res, next) => {
   } = req.body;
 
   let updateFields = {};
+  if (username) {
+    updateFields.username = username;
+  }
   if (firstName) {
     updateFields.firstName = firstName;
   }
