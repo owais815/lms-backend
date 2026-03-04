@@ -60,13 +60,13 @@ async function callingAppRequest(path, method = 'GET', body = null) {
  * @param {boolean} isPresenter - true = teacher/admin
  * @returns {Promise<string>}   - The full join URL to load in the iframe
  */
-async function createJoinUrl(roomId, userName, isPresenter) {
+async function createJoinUrl(roomId, userName, isPresenter, audio = false, video = false) {
   const params = new URLSearchParams({
     room: roomId,
     roomPassword: 'false',
     name: userName,
-    audio: 'true',
-    video: 'true',
+    audio: String(audio),
+    video: String(video),
     screen: String(isPresenter),
     hide: 'false',
     notify: 'false',
