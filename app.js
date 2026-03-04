@@ -35,6 +35,7 @@ const notificationRoutes = require("./routes/notifications");
 const teacherAttendanceRoutes = require("./routes/teacherAttendance");
 const sessionFeedbackRoutes = require("./routes/feedback");
 const feesRoutes = require("./routes/fees");
+const faqRoutes = require("./routes/faq");
 
 
 
@@ -194,6 +195,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/teacher-attendance", teacherAttendanceRoutes);
 app.use("/api/session-feedback", sessionFeedbackRoutes);
 app.use("/api/fees", feesRoutes);
+app.use("/api/faq", faqRoutes);
 
 
 
