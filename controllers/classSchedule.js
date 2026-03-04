@@ -945,6 +945,7 @@ exports.endSession = async (req, res) => {
         const io = await ioPromise;
         io.to(`session-${sessionId}`).emit('session:ended', {
           sessionId: Number(sessionId),
+          title: session.title,
         });
       }
     } catch (socketErr) {
