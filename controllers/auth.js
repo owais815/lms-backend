@@ -183,6 +183,7 @@ exports.login = async (req, res, next) => {
                 id:         String(user.id),
                 email:      user.email || null,
                 username:   user.username,
+                userType:   'ADMIN',
                 role,
                 permissions,
                 isActive:   true,
