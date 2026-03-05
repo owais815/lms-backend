@@ -94,6 +94,11 @@ const Student = sequelize.define('Student', {
         type: Sequelize.STRING,
         allowNull: true
     },
+    shift: {
+        type: Sequelize.ENUM('Morning', 'Afternoon', 'Evening'),
+        allowNull: true,
+        defaultValue: null
+    },
     // FK to Parent — one parent can have many students
     parentId: {
         type: Sequelize.INTEGER,
