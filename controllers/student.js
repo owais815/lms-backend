@@ -30,9 +30,11 @@ const {
   ClassSchedule,
   ClassSession,
   SessionFeedback,
+  Resource,
 } = require("../models/association");
 const Payment = require("../models/Payment");
 const Plan = require("../models/Plan");
+const Survey = require("../models/Survey");
 
 exports.signup = async (req, res, next) => {
   const errors = validationResult(req);
@@ -187,6 +189,8 @@ exports.delete = async (req, res, next) => {
 
     // Delete leaf records first (those that depend on ClassSession or other children)
     await SessionFeedback.destroy({ where: { studentId }, transaction: t });
+    await Survey.destroy({ where: { studentId }, transaction: t });
+    await Resource.destroy({ where: { studentId }, transaction: t });
     await Attendance.destroy({ where: { studentId }, transaction: t });
     await QuizAttempt.destroy({ where: { studentId }, transaction: t });
     await SubmittedAssignment.destroy({ where: { studentId }, transaction: t });
@@ -205,10 +209,25 @@ exports.delete = async (req, res, next) => {
     await ClassSession.update({ studentId: null }, { where: { studentId }, transaction: t });
     await ClassSchedule.update({ studentId: null }, { where: { studentId }, transaction: t });
 
-    // Quiz / CourseDetails / UpcomingCourses: nullify rather than delete to preserve records
-    await Quiz.update({ studentId: null }, { where: { studentId }, transaction: t });
-    await CourseDetails.update({ studentId: null }, { where: { studentId }, transaction: t });
+    // UpcomingCourses: nullable studentId — just nullify
     await UpcomingCourses.update({ studentId: null }, { where: { studentId }, transaction: t });
+
+    // Quiz: nullable studentId — just nullify
+    await Quiz.update({ studentId: null }, { where: { studentId }, transaction: t });
+
+    // CourseDetails.studentId is NOT NULL, so we must delete those rows.
+    // First nullify courseDetailsId FKs on records that reference them but must be preserved.
+    const courseDetailsList = await CourseDetails.findAll({
+      where: { studentId },
+      attributes: ['id'],
+      transaction: t,
+    });
+    if (courseDetailsList.length > 0) {
+      const courseDetailsIds = courseDetailsList.map((cd) => cd.id);
+      await ClassSchedule.update({ courseDetailsId: null }, { where: { courseDetailsId: { [Op.in]: courseDetailsIds } }, transaction: t });
+      await ClassSession.update({ courseDetailsId: null }, { where: { courseDetailsId: { [Op.in]: courseDetailsIds } }, transaction: t });
+      await CourseDetails.destroy({ where: { studentId }, transaction: t });
+    }
 
     await student.destroy({ transaction: t });
     await t.commit();
