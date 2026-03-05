@@ -36,6 +36,7 @@ exports.signup = (req, res, next) => {
   const contact = req.body.contact;
   const cnic = req.body.cnic;
   const email = req.body.email;
+  const shift = req.body.shift; // array of shifts e.g. ['Morning','Evening']
 
   bcrypt
     .hash(password, 12)
@@ -48,6 +49,7 @@ exports.signup = (req, res, next) => {
         cnic: cnic,
         email: email,
         password: hashPwd,
+        shift: (Array.isArray(shift) && shift.length > 0) ? shift : null,
       });
       return user.save();
     })
@@ -149,7 +151,8 @@ exports.update = (req, res, next) => {
     updateFields.canDirectlyPublish = canDirectlyPublish;
   }
   if (shift !== undefined) {
-    updateFields.shift = shift || null;
+    // shift is an array of shifts e.g. ['Morning','Evening'], empty array → null
+    updateFields.shift = (Array.isArray(shift) && shift.length > 0) ? shift : null;
   }
 
   // Find the Teacher record by ID and update the fields
