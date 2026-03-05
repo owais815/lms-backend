@@ -58,10 +58,17 @@ async function callingAppRequest(path, method = 'GET', body = null) {
  * @returns {Promise<string>}   - The full join URL to load in the iframe
  */
 async function createJoinUrl(roomId, userName, isPresenter, audio = false, video = false) {
+  // Append a short random suffix so each join attempt has a unique peer_name.
+  // MiroTalk blocks entry if another peer with the exact same name is already in the room
+  // (e.g. on iframe refresh or duplicate names). The suffix keeps display names readable
+  // while guaranteeing uniqueness.
+  const suffix = Math.random().toString(36).slice(2, 5);
+  const uniqueName = `${userName}-${suffix}`;
+
   const params = new URLSearchParams({
     room: roomId,
     roomPassword: 'false',
-    name: userName,
+    name: uniqueName,
     audio: String(audio),
     video: String(video),
     screen: String(isPresenter),
