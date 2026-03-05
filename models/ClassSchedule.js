@@ -76,6 +76,11 @@ const ClassSchedule = sequelize.define('ClassSchedule', {
     allowNull: true,
     references: { model: 'CourseDetails', key: 'id' },
   },
+  shift: {
+    type: DataTypes.ENUM('Morning', 'Afternoon', 'Evening'),
+    allowNull: true,
+    defaultValue: null,
+  },
 }, {
   tableName: 'ClassSchedules',
   timestamps: true,
