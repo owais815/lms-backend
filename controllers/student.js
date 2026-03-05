@@ -147,6 +147,8 @@ exports.login = (req, res, next) => {
           permissions: [],
           isActive: true,
           profileImg: loggedIn.profileImg || null,
+          shift: loggedIn.shift || null,
+          timeZone: loggedIn.timeZone || null,
         },
       });
     })
