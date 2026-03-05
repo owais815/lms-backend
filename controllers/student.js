@@ -47,6 +47,7 @@ exports.signup = async (req, res, next) => {
     flexibleHours,
     suitableHours,
     nameForTeacher,
+    shift,
   } = req.body;
 
   try {
@@ -70,6 +71,7 @@ exports.signup = async (req, res, next) => {
       flexibleHours,
       suitableHours,
       nameForTeacher,
+      shift: shift || null,
     });
 
     // Step 3: Fetch the plan details
