@@ -199,6 +199,7 @@ exports.update = (req, res, next) => {
     suitableHours,
     nameForTeacher,
     planId,
+    shift,
   } = req.body;
 
   let updateFields = {};
@@ -255,6 +256,9 @@ exports.update = (req, res, next) => {
   }
   if (planId) {
     updateFields.planId = planId;
+  }
+  if (shift !== undefined) {
+    updateFields.shift = shift || null;
   }
 
   Student.findByPk(studentId)
