@@ -49,7 +49,11 @@ exports.signup = (req, res, next) => {
         cnic: cnic,
         email: email,
         password: hashPwd,
-        shift: (Array.isArray(shift) && shift.length > 0) ? shift : null,
+        shift: (() => {
+          const VALID_SHIFTS = ['Morning', 'Afternoon', 'Evening'];
+          const clean = Array.isArray(shift) ? shift.filter(s => VALID_SHIFTS.includes(s)) : [];
+          return clean.length > 0 ? clean : null;
+        })(),
       });
       return user.save();
     })
@@ -108,6 +112,7 @@ exports.login = (req, res, next) => {
           permissions: [],
           isActive: true,
           profileImg: loggedIn.profileImg || null,
+          shift: loggedIn.shift || null,
         },
       });
     })
@@ -151,8 +156,9 @@ exports.update = (req, res, next) => {
     updateFields.canDirectlyPublish = canDirectlyPublish;
   }
   if (shift !== undefined) {
-    // shift is an array of shifts e.g. ['Morning','Evening'], empty array → null
-    updateFields.shift = (Array.isArray(shift) && shift.length > 0) ? shift : null;
+    const VALID_SHIFTS = ['Morning', 'Afternoon', 'Evening'];
+    const cleanShifts = Array.isArray(shift) ? shift.filter(s => VALID_SHIFTS.includes(s)) : [];
+    updateFields.shift = cleanShifts.length > 0 ? cleanShifts : null;
   }
 
   // Find the Teacher record by ID and update the fields
