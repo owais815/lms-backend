@@ -847,6 +847,12 @@ exports.joinSession = async (req, res) => {
       return res.status(400).json({ message: 'userId and role are required' });
     }
 
+    // Cross-check: role in body must match the JWT-authenticated userType (prevents role spoofing)
+    const jwtRole = (req.userType || '').toLowerCase();
+    if (role !== jwtRole) {
+      return res.status(403).json({ message: 'Role mismatch: claimed role does not match your token.' });
+    }
+
     const session = await ClassSession.findByPk(sessionId, {
       include: [
         { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName'] },
@@ -908,6 +914,12 @@ exports.startSession = async (req, res) => {
 
     if (!userId || !role) {
       return res.status(400).json({ message: 'userId and role are required' });
+    }
+
+    // Cross-check: role in body must match the JWT-authenticated userType (prevents role spoofing)
+    const jwtRole = (req.userType || '').toLowerCase();
+    if (role !== jwtRole) {
+      return res.status(403).json({ message: 'Role mismatch: claimed role does not match your token.' });
     }
     if (role !== 'teacher' && role !== 'admin') {
       return res.status(403).json({ message: 'Only teachers and admins can start a session' });
@@ -994,6 +1006,12 @@ exports.endSession = async (req, res) => {
 
     if (!userId || !role) {
       return res.status(400).json({ message: 'userId and role are required' });
+    }
+
+    // Cross-check: role in body must match the JWT-authenticated userType (prevents role spoofing)
+    const jwtRole = (req.userType || '').toLowerCase();
+    if (role !== jwtRole) {
+      return res.status(403).json({ message: 'Role mismatch: claimed role does not match your token.' });
     }
     if (role !== 'teacher' && role !== 'admin') {
       return res.status(403).json({ message: 'Only teachers and admins can end a session' });

@@ -14,7 +14,7 @@ exports.init = (server) => {
 
   io = require('socket.io')(server, {
     cors: {
-      origin: allowedOrigins.length > 0 ? allowedOrigins : '*',
+      origin: allowedOrigins,
       credentials: true,
     },
     path: '/chat/socket.io/',
