@@ -47,9 +47,21 @@ const Teacher = sequelize.define('Teacher', {
         defaultValue: true
     },
     shift: {
-        type: Sequelize.ENUM('Morning', 'Afternoon', 'Evening'),
+        type: Sequelize.TEXT,
         allowNull: true,
-        defaultValue: null
+        defaultValue: null,
+        get() {
+            const raw = this.getDataValue('shift');
+            if (!raw) return null;
+            try { return JSON.parse(raw); } catch { return null; }
+        },
+        set(val) {
+            if (!val || (Array.isArray(val) && val.length === 0)) {
+                this.setDataValue('shift', null);
+            } else {
+                this.setDataValue('shift', JSON.stringify(val));
+            }
+        }
     }
 });
 
