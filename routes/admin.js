@@ -3,6 +3,7 @@ const { body } = require('express-validator');
 const adminController = require('../controllers/admin');
 const Admin = require('../models/Admin');
 const isAuth = require('../middleware/is-auth');
+const { loginRateLimiter } = require('../middleware/rateLimiter');
 const checkPermission = require('../middleware/check-permission');
 const { PERMISSIONS } = require('../config/permissions');
 
@@ -25,7 +26,7 @@ router.put('/signup', [
   body('name').trim().not().isEmpty(),
 ], adminController.signup);
 
-router.post('/login', adminController.login);
+router.post('/login', loginRateLimiter, adminController.login);
 
 // ─── Protected routes ────────────────────────────────────────────────────────
 

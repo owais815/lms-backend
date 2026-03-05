@@ -120,6 +120,13 @@ exports.update = async (req, res, next) => {
   const { parentId } = req.params;
   const { firstName, lastName, contact, address, emergencyContact, studentIds } = req.body;
 
+  // IDOR check: non-admins can only update their own record
+  if (req.userType !== 'ADMIN' && req.userType !== 'SUPER_ADMIN') {
+    if (String(req.userId) !== String(parentId)) {
+      return res.status(403).json({ message: 'Forbidden: you can only update your own profile.' });
+    }
+  }
+
   try {
     const parent = await Parent.findByPk(parentId);
     if (!parent) {

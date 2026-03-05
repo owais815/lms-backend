@@ -4,24 +4,45 @@ const ChatGroupMember = require("../models/ChatGroupMember");
 const Notification = require("../models/Notifications");
 const Student = require("../models/Student");
 const Teacher = require("../models/Teacher");
+const Parent = require("../models/Parent");
 const { Op } = require("sequelize");
 
 const onlineUsers = new Map();
 
 const handleConnection = (socket, io) => {
   // -------------------------------------------------------------------------
-  // userConnected — track online users (students, teachers, AND admins)
+  // userConnected — track online users
+  // userId/userType are trusted from JWT (set by socket.js middleware) but
+  // clients still send them explicitly for backward compat with the UI.
+  // We cross-check against socket.userId to prevent impersonation.
   // -------------------------------------------------------------------------
   socket.on("userConnected", async (data) => {
     const { userId, userType } = data;
+
+    // Reject if the claimed identity doesn't match the authenticated token
+    if (String(userId) !== String(socket.userId)) {
+      socket.emit("chatError", { message: "Identity mismatch." });
+      return;
+    }
+
     try {
       let userDetails;
       if (userType === "student") {
-        userDetails = await Student.findByPk(userId);
+        userDetails = await Student.findByPk(userId, {
+          attributes: ["id", "firstName", "lastName", "username", "profileImg"],
+        });
       } else if (userType === "teacher") {
-        userDetails = await Teacher.findByPk(userId);
+        userDetails = await Teacher.findByPk(userId, {
+          attributes: ["id", "firstName", "lastName", "username", "imageUrl"],
+        });
       } else if (userType === "admin") {
-        userDetails = await Admin.findByPk(userId);
+        userDetails = await Admin.findByPk(userId, {
+          attributes: ["id", "name", "username"],
+        });
+      } else if (userType === "parent") {
+        userDetails = await Parent.findByPk(userId, {
+          attributes: ["id", "firstName", "lastName", "username"],
+        });
       }
 
       if (!userDetails) return;
@@ -31,10 +52,21 @@ const handleConnection = (socket, io) => {
       onlineUsers.set(userKey, {
         socketId: socket.id,
         userType,
-        details: userDetails,
+        // Only include non-sensitive fields in the presence list
+        userId: String(userId),
+        displayName: userType === "admin"
+          ? userDetails.name
+          : `${userDetails.firstName} ${userDetails.lastName || ""}`.trim(),
       });
 
-      io.emit("onlineUsers", Array.from(onlineUsers.values()));
+      // Emit the updated presence list ONLY to admin sockets, not to everyone
+      for (const [, u] of onlineUsers) {
+        if (u.userType === "admin") {
+          io.to(`admin-${u.userId}`).emit("onlineUsers", Array.from(onlineUsers.values()));
+        }
+      }
+      // Send the current list back to the connecting socket
+      socket.emit("onlineUsers", Array.from(onlineUsers.values()));
 
       // Join a personal room for targeted delivery
       socket.join(userKey);
@@ -88,6 +120,13 @@ const handleConnection = (socket, io) => {
   // -------------------------------------------------------------------------
   socket.on("chatMessage", async (data) => {
     const { message, senderId, senderType, messageType, mediaUrl, mediaDuration } = data;
+
+    // Verify sender identity against authenticated socket
+    if (String(senderId) !== String(socket.userId)) {
+      socket.emit("chatError", { message: "Identity mismatch." });
+      return;
+    }
+
     try {
       const savedMessage = await ChatMessage.create({
         message: message || '',
@@ -128,15 +167,18 @@ const handleConnection = (socket, io) => {
 
   // -------------------------------------------------------------------------
   // privateMessage — 1:1 message, only to sender + receiver rooms
-  // Rule: only admin can START a new conversation; others can only reply to
-  //       an existing admin-initiated conversation.
   // -------------------------------------------------------------------------
   socket.on("privateMessage", async (data) => {
     const { message, senderId, senderType, receiverId, receiverType, messageType, mediaUrl, mediaDuration } = data;
 
+    // Verify sender identity against authenticated socket
+    if (String(senderId) !== String(socket.userId)) {
+      socket.emit("chatError", { message: "Identity mismatch." });
+      return;
+    }
+
     try {
-      // Enforce admin-mediated rule: if sender is not admin, a prior message
-      // between these two parties must already exist.
+      // Enforce admin-mediated rule: only admin can START a conversation
       if (senderType !== "admin") {
         const priorMessage = await ChatMessage.findOne({
           where: {
@@ -155,8 +197,7 @@ const handleConnection = (socket, io) => {
 
         if (!priorMessage) {
           socket.emit("chatError", {
-            message:
-              "Only admin can start a new private conversation. You can only reply to existing ones.",
+            message: "Only admin can start a new private conversation. You can only reply to existing ones.",
           });
           return;
         }
@@ -189,12 +230,8 @@ const handleConnection = (socket, io) => {
         });
       }
 
-      const enrichedMsg = {
-        ...savedMessage.toJSON(),
-        senderDetails,
-      };
+      const enrichedMsg = { ...savedMessage.toJSON(), senderDetails };
 
-      // Deliver ONLY to the two parties via their personal rooms
       const senderKey = `${senderType}-${senderId}`;
       const receiverKey = `${receiverType}-${receiverId}`;
       io.to(senderKey).emit("privateMessageSent", enrichedMsg);
@@ -206,12 +243,17 @@ const handleConnection = (socket, io) => {
 
   // -------------------------------------------------------------------------
   // groupMessage — message to a specific chat group
-  // Payload: { groupId, senderId, senderType, message, messageType?, mediaUrl?, mediaDuration? }
   // -------------------------------------------------------------------------
   socket.on("groupMessage", async (data) => {
     const { groupId, senderId, senderType, message, messageType, mediaUrl, mediaDuration } = data;
+
+    // Verify sender identity against authenticated socket
+    if (String(senderId) !== String(socket.userId)) {
+      socket.emit("chatError", { message: "Identity mismatch." });
+      return;
+    }
+
     try {
-      // Verify sender is a member with canSend = true
       const membership = await ChatGroupMember.findOne({
         where: { groupId, userId: senderId, userType: senderType },
       });
@@ -253,7 +295,7 @@ const handleConnection = (socket, io) => {
   });
 
   // -------------------------------------------------------------------------
-  // joinGroup / leaveGroup — called when admin adds/removes a member in real-time
+  // joinGroup / leaveGroup
   // -------------------------------------------------------------------------
   socket.on("joinGroup", ({ groupId }) => {
     if (groupId) socket.join(`group-${groupId}`);
@@ -264,38 +306,36 @@ const handleConnection = (socket, io) => {
   });
 
   // -------------------------------------------------------------------------
-  // deleteMessage — only message owner or admin can delete
-  // Payload: { messageId, requesterId, requesterType }
+  // deleteMessage — only message owner or admin can delete.
+  // Always requires { messageId, requesterId, requesterType } — legacy plain
+  // number format is no longer accepted to prevent unauthorized deletion.
   // -------------------------------------------------------------------------
   socket.on("deleteMessage", async (data) => {
-    // Support both old format (plain messageId number) and new format (object)
-    let messageId, requesterId, requesterType;
-    if (data && typeof data === "object" && "messageId" in data) {
-      ({ messageId, requesterId, requesterType } = data);
-    } else {
-      // Legacy: plain messageId (no authorization check possible)
-      messageId = data;
-      requesterId = null;
-      requesterType = null;
+    if (!data || typeof data !== "object" || !("messageId" in data)) {
+      socket.emit("chatError", { message: "Invalid deleteMessage payload." });
+      return;
+    }
+
+    const { messageId, requesterId, requesterType } = data;
+
+    // Verify identity against authenticated socket
+    if (String(requesterId) !== String(socket.userId)) {
+      socket.emit("chatError", { message: "Identity mismatch." });
+      return;
     }
 
     try {
       const message = await ChatMessage.findByPk(messageId);
       if (!message) return;
 
-      // Authorization check
-      if (requesterId !== null && requesterType !== null) {
-        const isOwner =
-          message.senderId === parseInt(requesterId) &&
-          message.senderType === requesterType;
-        const isAdmin = requesterType === "admin";
+      const isOwner =
+        message.senderId === parseInt(requesterId) &&
+        message.senderType === requesterType;
+      const isAdmin = requesterType === "admin";
 
-        if (!isOwner && !isAdmin) {
-          socket.emit("chatError", {
-            message: "You are not authorized to delete this message.",
-          });
-          return;
-        }
+      if (!isOwner && !isAdmin) {
+        socket.emit("chatError", { message: "You are not authorized to delete this message." });
+        return;
       }
 
       await message.destroy();
@@ -326,10 +366,15 @@ const handleConnection = (socket, io) => {
   // disconnect — remove from online users map
   // -------------------------------------------------------------------------
   socket.on("disconnect", () => {
-    for (const [userId, userData] of onlineUsers.entries()) {
+    for (const [userKey, userData] of onlineUsers.entries()) {
       if (userData.socketId === socket.id) {
-        onlineUsers.delete(userId);
-        io.emit("onlineUsers", Array.from(onlineUsers.values()));
+        onlineUsers.delete(userKey);
+        // Notify admins of updated presence list
+        for (const [, u] of onlineUsers) {
+          if (u.userType === "admin") {
+            io.to(`admin-${u.userId}`).emit("onlineUsers", Array.from(onlineUsers.values()));
+          }
+        }
         break;
       }
     }

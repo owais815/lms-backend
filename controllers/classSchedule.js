@@ -599,6 +599,8 @@ exports.getCalendarEvents = async (req, res) => {
     let sessions = [];
 
     if (role === 'admin') {
+      // When no date range is provided, cap to 500 sessions to prevent full-table scans
+      const adminLimit = Object.keys(sessionWhere).length === 0 ? 500 : undefined;
       sessions = await ClassSession.findAll({
         where: sessionWhere,
         include: [
@@ -608,6 +610,7 @@ exports.getCalendarEvents = async (req, res) => {
           { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
         ],
         order: [['date', 'ASC']],
+        ...(adminLimit ? { limit: adminLimit } : {}),
       });
     } else if (role === 'teacher') {
       sessions = await ClassSession.findAll({
@@ -858,7 +861,9 @@ exports.joinSession = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized for this session' });
     }
     if (role === 'student') {
-      if (String(session.studentId) !== String(userId)) {
+      // Allow if this is a personal session for this student, OR a group session (studentId=null)
+      const isPersonalSession = session.studentId !== null;
+      if (isPersonalSession && String(session.studentId) !== String(userId)) {
         return res.status(403).json({ message: 'Not authorized for this session' });
       }
       if (session.sessionStatus !== 'live') {
@@ -1000,7 +1005,8 @@ exports.endSession = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized for this session' });
     }
 
-    await session.update({ sessionStatus: 'ended' });
+    // Mark both sessionStatus=ended AND status=completed so attendance/reporting works
+    await session.update({ sessionStatus: 'ended', status: 'completed' });
 
     try {
       const ioPromise = socket.getIO();
@@ -1015,7 +1021,7 @@ exports.endSession = async (req, res) => {
       console.error('Socket emit error (non-fatal):', socketErr.message);
     }
 
-    return res.json({ message: 'Session ended', sessionStatus: 'ended' });
+    return res.json({ message: 'Session ended', sessionStatus: 'ended', status: 'completed' });
   } catch (err) {
     console.error('endSession error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });

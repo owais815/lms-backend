@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require("express");
-const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { handleConnection } = require('./SocketMethods/HandleConnection');
@@ -37,52 +36,38 @@ const sessionFeedbackRoutes = require("./routes/feedback");
 const feesRoutes = require("./routes/fees");
 const faqRoutes = require("./routes/faq");
 
-
-
-
-
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
 const { startOverdueFeesCron } = require('./Schedular/markOverdueFees');
 const isAuth = require('./middleware/is-auth');
-const io =  require('./socket').getIO();
 
 // Choose the environment
 const env = process.env.NODE_ENV || "development";
 const serverConfig = require(`./config/${env}`);
-// require('./Schedular/scheduledTasks');
+
 const bodyParser = require("body-parser");
 const sequelize = require("./utils/database");
 const multer = require("multer");
 const cors = require("cors");
 const app = express();
 
+// ── Startup error safety net ────────────────────────────────────────────────
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  // Exit so the process manager (PM2/systemd) can restart cleanly
+  process.exit(1);
+});
+
 // Ensure upload directory exists
 const resourcesDir = path.join(__dirname, "resources");
 if (!fs.existsSync(resourcesDir)) {
   fs.mkdirSync(resourcesDir, { recursive: true });
 }
-const {
-  Teacher,
-  Student,
-  TeacherStudent,
-  StudentFeedback,
-  UpcomingClass,
-  Quiz,
-  QuizAttempt,
-  Assignment,
-  SubmittedAssignment,
-  Attendance,
-  MyBookmark,
-  Resource,
-  AdminFeedback,
-  MakeUpClass,
-  Courses,
-  UpcomingCourses,
-  ClassSchedule,
-  ClassSession,
-  SessionFeedback,
-} = require("./models/association");
+
+require("./models/association");
 
 const allowedOrigins = [
   process.env.CORS_ORIGIN_DEV,
@@ -91,11 +76,10 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(null, false);
+      callback(new Error(`CORS: origin '${origin}' not allowed`));
     }
   },
   credentials: true,
@@ -104,67 +88,70 @@ app.use(cors({
 app.use(bodyParser.json());
 
 const fileStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req, _file, cb) => {
     cb(null, "resources");
   },
-  filename: (req, file, cb) => {
+  filename: (_req, file, cb) => {
     const timestamp = new Date().toISOString().replace(/:/g, '-');
     cb(null, `${timestamp}-${file.originalname}`);
   },
 });
-const http = require('http').createServer(app);
-const fileFilter = (req, file, cb) => {
 
-  if (
-    file.mimetype === "image/png" ||
-    file.mimetype === "image/jpg" ||
-    file.mimetype === "image/jpeg" ||
-    file.mimetype === "application/pdf" ||
-    file.mimetype === "application/vnd.ms-powerpoint" ||
-    file.mimetype ===
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
-    file.mimetype === "application/msword" ||
-    file.mimetype ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-  ) {
+// ── File upload security ────────────────────────────────────────────────────
+// Validate by both MIME type AND extension to make spoofing harder.
+// (True magic-byte validation requires memoryStorage + the file-type package.)
+const ALLOWED_MIMETYPES = new Set([
+  "image/png",
+  "image/jpg",
+  "image/jpeg",
+  "application/pdf",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.pdf', '.ppt', '.pptx', '.doc', '.docx']);
+
+const fileFilter = (_req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (ALLOWED_MIMETYPES.has(file.mimetype) && ALLOWED_EXTENSIONS.has(ext)) {
     cb(null, true);
   } else {
     cb(new Error('Invalid file type. Allowed: images (PNG/JPG), PDF, Word, PowerPoint'), false);
   }
 };
-// PDF upload route uses its own multer (array, pdf-only) — must be mounted
-// BEFORE the global single-file multer so the request body isn't consumed first.
+
+// ── coursePDF route MUST come before global multer middleware ────────────────
 app.use("/api/course-pdfs", coursePDFRoutes);
 
-// Voice message upload — must be mounted BEFORE global multer to prevent
-// the global middleware from consuming/discarding the 'voice' file field.
-const voiceFileFilter = (req, file, cb) => cb(null, file.mimetype.startsWith('audio/'));
-const voiceUpload = multer({ storage: fileStorage, fileFilter: voiceFileFilter }).single('voice');
+// ── Voice upload — MUST come before global multer middleware ─────────────────
+const voiceFileFilter = (_req, file, cb) => {
+  if (file.mimetype.startsWith('audio/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only audio files are accepted for voice messages'), false);
+  }
+};
+const voiceUpload = multer({
+  storage: fileStorage,
+  fileFilter: voiceFileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+}).single('voice');
+
 app.post('/api/chat/upload-voice', isAuth, voiceUpload, (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No audio file received' });
   res.json({ mediaUrl: `resources/${req.file.filename}` });
 });
 
+// ── Global single-file multer (images, PDFs, Word, PPT) — 10 MB limit ───────
 app.use(
-  multer({ storage: fileStorage, fileFilter: fileFilter }).single("file")
+  multer({
+    storage: fileStorage,
+    fileFilter: fileFilter,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  }).single("file")
 );
 
-// // Resource upload configuration (new)
-// const resourceStorage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     cb(null, 'resources');
-//   },
-//   filename: (req, file, cb) => {
-//     cb(null, `${Date.now()}-${file.originalname}`);
-//   },
-// });
-// app.use(
-//   multer({ storage: resourceStorage, fileFilter: fileFilter }).single('file')
-// );
-
-
-// app.use("/images", express.static(path.join(__dirname, "resources")));
-// app.use('/resources', express.static(path.join(__dirname, "resources")))
 app.use("/api/resources", express.static(path.join(__dirname, "resources")));
 app.use("/api/auth", authRoutes);
 app.use("/api/teacher", teacherRoutes);
@@ -197,84 +184,61 @@ app.use("/api/session-feedback", sessionFeedbackRoutes);
 app.use("/api/fees", feesRoutes);
 app.use("/api/faq", faqRoutes);
 
-
-
-
-
-
-
-app.use((error, req, res, next) => {
+// ── Global error handler ─────────────────────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
+app.use((error, _req, res, _next) => {
   const status = error.statusCode || 500;
-  const message = error.message;
-  const data = error.data;
-  res.status(status).json({ message: message, data: data });
+  const isProd = env === 'production';
+  // In production, hide internal server error details to avoid leaking stack traces
+  const message = (status === 500 && isProd)
+    ? 'An internal server error occurred.'
+    : error.message;
+  const body = { message };
+  // Only expose validation data (status 422) — never expose 500 data in production
+  if (error.data && (status !== 500 || !isProd)) {
+    body.data = error.data;
+  }
+  res.status(status).json(body);
 });
 
-
-
-
-cleanupAnnouncements();
-startMessageCleanup(io);
-startOverdueFeesCron();
-const port = serverConfig.port || process.env.PORT || 8080;
-const host = serverConfig.host || process.env.HOST || 'localhost';
-// Sequelize alter:true silently drops ENUM columns on MySQL — patch them back after sync
+// ── Sequelize alter:true silently drops ENUM columns — patch them back ────────
 async function patchEnumColumns() {
   const patches = [
-    // Students
     `ALTER TABLE Students ADD COLUMN status ENUM('active','inactive') DEFAULT 'active'`,
-    // Quizzes
     `ALTER TABLE Quizzes ADD COLUMN status ENUM('pending','active','rejected') DEFAULT 'active'`,
-    // Questions
     `ALTER TABLE Questions ADD COLUMN type ENUM('multiple_choice','true_false','short_answer') NOT NULL DEFAULT 'multiple_choice'`,
-    // Assignments
     `ALTER TABLE Assignments ADD COLUMN status ENUM('pending','active','rejected') DEFAULT 'active'`,
-    // SubmittedAssignments
     `ALTER TABLE SubmittedAssignments ADD COLUMN status ENUM('Not Started','In Progress','Submitted','Graded') NOT NULL DEFAULT 'Not Started'`,
-    // Attendances
     `ALTER TABLE Attendances ADD COLUMN status ENUM('Present','Absent') NOT NULL DEFAULT 'Present'`,
-    // ClassSchedules
     `ALTER TABLE ClassSchedules ADD COLUMN recurrenceType ENUM('one-time','weekly','biweekly') NOT NULL DEFAULT 'one-time'`,
     `ALTER TABLE ClassSchedules ADD COLUMN status ENUM('pending','active','cancelled') NOT NULL DEFAULT 'active'`,
     `ALTER TABLE ClassSchedules ADD COLUMN createdBy ENUM('admin','teacher') NOT NULL DEFAULT 'admin'`,
-    // ClassSessions
     `ALTER TABLE ClassSessions ADD COLUMN status ENUM('scheduled','completed','cancelled','makeup') NOT NULL DEFAULT 'scheduled'`,
-    // MakeUpClass
     `ALTER TABLE MakeUpClass ADD COLUMN status ENUM('Pending','Approved','Rejected') NOT NULL DEFAULT 'Pending'`,
-    // AdminFeedback
     `ALTER TABLE AdminFeedback ADD COLUMN areasToImprove ENUM('Reading','Writing','Speaking','Listening') DEFAULT NULL`,
     `ALTER TABLE AdminFeedback ADD COLUMN progressInGrades ENUM('A','B','C','D','F') NOT NULL DEFAULT 'A'`,
-    // SupportRequests
     `ALTER TABLE SupportRequests ADD COLUMN userType ENUM('student','teacher') NOT NULL DEFAULT 'student'`,
     `ALTER TABLE SupportRequests ADD COLUMN priority ENUM('high','medium','normal') DEFAULT 'normal'`,
     `ALTER TABLE SupportRequests ADD COLUMN status ENUM('pending','resolved','rejected') DEFAULT 'pending'`,
-    // Announcements
     `ALTER TABLE Announcements ADD COLUMN type ENUM('payment','class','general','assessment') NOT NULL DEFAULT 'general'`,
-    // QuestionBanks
     `ALTER TABLE QuestionBanks ADD COLUMN type ENUM('multiple_choice','true_false','short_answer') NOT NULL DEFAULT 'multiple_choice'`,
-    // PlanChangeRequests
     `ALTER TABLE PlanChangeRequests ADD COLUMN status ENUM('pending','approved','rejected','completed') DEFAULT 'pending'`,
     `ALTER TABLE PlanChangeRequests ADD COLUMN paymentStatus ENUM('pending','paid') DEFAULT 'pending'`,
-    // ChatMessages
     `ALTER TABLE ChatMessages ADD COLUMN messageType ENUM('text','voice') NOT NULL DEFAULT 'text'`,
-    // TeacherAttendances
     `ALTER TABLE TeacherAttendances ADD COLUMN status ENUM('Present','Absent') NOT NULL DEFAULT 'Absent'`,
-    // Fees
     `ALTER TABLE Fees ADD COLUMN status ENUM('pending','paid','overdue','cancelled') NOT NULL DEFAULT 'pending'`,
-    // Shifts
     `ALTER TABLE Students ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
     `ALTER TABLE Teachers ADD COLUMN shift TEXT DEFAULT NULL`,
     `ALTER TABLE Teachers MODIFY COLUMN shift TEXT DEFAULT NULL`,
     `ALTER TABLE ClassSchedules ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
     `ALTER TABLE ClassSessions ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
-    // ClassSessions sessionStatus
     `ALTER TABLE ClassSessions ADD COLUMN sessionStatus ENUM('idle','live','ended') NOT NULL DEFAULT 'idle'`,
   ];
   for (const sql of patches) {
     try {
       await sequelize.query(sql);
     } catch (_) {
-      // column already exists — ignore
+      // Column already exists — ignore duplicate-column errors
     }
   }
 }
@@ -283,33 +247,24 @@ sequelize
   .sync({ alter: true })
   .then(async () => {
     await patchEnumColumns();
-    if (env === "production") {
-      serverConfig.startServer(app);
-      (async () => {
-        const io = await require('./socket').getIO();
-        io.on('connection', (socket) => {
-          console.log("connection established...!!!");
-          handleConnection(socket,io);
-        });
-    })();
-    } else {
-      // http.listen(port, () => {
-      //   console.log(`Server is running on http://${host}:${port}`);
-      //   console.log("Socket.IO is ready for connections");
-      // });
-      serverConfig.startServer(app);
-     
-      (async () => {
-        const io = await require('./socket').getIO();
-        io.on('connection', (socket) => {
-          console.log("connection established...!!!");
-          handleConnection(socket,io);
-        });
-    })();
 
-    }
+    // Start server (this calls socket.init internally)
+    serverConfig.startServer(app);
+
+    // Attach the main Socket.IO connection handler ONCE, after socket.init() runs
+    const io = await require('./socket').getIO();
+    io.on('connection', (socket) => {
+      handleConnection(socket, io);
+    });
+
+    // Start background cron jobs now that io is ready
+    cleanupAnnouncements();
+    startMessageCleanup(io);
+    startOverdueFeesCron();
+
+    console.log(`[app] Server started in ${env} mode.`);
   })
   .catch((err) => {
-    console.error('DB sync failed — server will not start:', err);
+    console.error('[app] DB sync failed — server will not start:', err);
     process.exit(1);
   });

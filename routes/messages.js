@@ -34,7 +34,7 @@ async function enrichWithSenderDetails(messages) {
   }));
 }
 
-router.get('/messages', async (req, res) => {
+router.get('/messages', isAuth, async (req, res) => {
   try {
     const messages = await ChatMessage.findAll({
       where: { isPrivate: false },
@@ -49,7 +49,7 @@ router.get('/messages', async (req, res) => {
   }
 });
 
-router.get('/private-messages/:userId/:userType', async (req, res) => {
+router.get('/private-messages/:userId/:userType', isAuth, async (req, res) => {
   const { userId, userType } = req.params;
   try {
     const messages = await ChatMessage.findAll({
@@ -71,7 +71,7 @@ router.get('/private-messages/:userId/:userType', async (req, res) => {
   }
 });
 
-router.get('/recent-chats/:userId/:userType', async (req, res) => {
+router.get('/recent-chats/:userId/:userType', isAuth, async (req, res) => {
   const { userId, userType } = req.params;
 
   try {

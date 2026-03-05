@@ -1,25 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const resourceController = require('../controllers/resource');
-const resourceUpload = require('../middleware/resource-upload'); // Create this middleware
+const isAuth = require('../middleware/is-auth');
 
 // Upload a new resource
-router.post('/upload', resourceController.uploadResource);
+router.post('/upload', isAuth, resourceController.uploadResource);
 
-// Get resources for a specific student and course 
-router.get('/student/:studentId/course/:courseId', resourceController.getResources);
+// Get resources for a specific student and course
+router.get('/student/:studentId/course/:courseId', isAuth, resourceController.getResources);
 
-//get with student Id
-router.get('/student/:studentId', resourceController.getResourcesOfStudent);
-
+// Get with student Id
+router.get('/student/:studentId', isAuth, resourceController.getResourcesOfStudent);
 
 // Delete a resource
-router.delete('/:resourceId', resourceController.deleteResource);
+router.delete('/:resourceId', isAuth, resourceController.deleteResource);
 
 // Serve a resource
-router.get('/:resourceId', resourceController.serveResource);
+router.get('/:resourceId', isAuth, resourceController.serveResource);
 
-router.post('/uploadProgress', resourceController.uploadProgress);
-
+router.post('/uploadProgress', isAuth, resourceController.uploadProgress);
 
 module.exports = router;

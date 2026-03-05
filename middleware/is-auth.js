@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 module.exports = (req, res, next) => {
   const authHeader = req.get('Authorization');
   if (!authHeader) {
-    const error = new Error('Not authenticated.!');
+    const error = new Error('Not authenticated.');
     error.statusCode = 401;
     throw error;
   }
@@ -14,12 +14,14 @@ module.exports = (req, res, next) => {
   try {
     decodedToken = jwt.verify(token, process.env.JWT_SECRET);
   } catch (err) {
-    err.statusCode = 500;
-    throw err;
+    // jwt.verify throws for expired, malformed, or invalid tokens — all are 401
+    const error = new Error(err.name === 'TokenExpiredError' ? 'Session expired. Please log in again.' : 'Invalid token.');
+    error.statusCode = 401;
+    return next(error);
   }
 
   if (!decodedToken) {
-    const error = new Error('Not authenticated...!!!');
+    const error = new Error('Not authenticated.');
     error.statusCode = 401;
     throw error;
   }

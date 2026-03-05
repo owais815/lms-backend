@@ -1,10 +1,10 @@
 const https = require("https");
 const http = require("http");
 const fs = require("fs");
-const socketHandler = require("../socket"); // Correctly point to your socket file
+const socketHandler = require("../socket");
 
 exports.startServer = (app) => {
-  // HTTP to HTTPS redirection
+  // HTTP → HTTPS redirect server
   http
     .createServer((req, res) => {
       const host = req.headers["host"];
@@ -17,7 +17,7 @@ exports.startServer = (app) => {
       res.end();
     })
     .listen(process.env.HTTP_PORT || 8080, () => {
-      console.log("HTTP redirect server running on port", process.env.HTTP_PORT || 8080);
+      console.log("[prod] HTTP redirect server running on port", process.env.HTTP_PORT || 8080);
     });
 
   const sslOptions = {
@@ -26,32 +26,11 @@ exports.startServer = (app) => {
   };
 
   const server = https.createServer(sslOptions, app).listen(process.env.HTTPS_PORT || 8443, () => {
-    console.log("HTTPS server running on port", process.env.HTTPS_PORT || 8443);
+    console.log("[prod] HTTPS server running on port", process.env.HTTPS_PORT || 8443);
   });
 
-  // Initialize and setup Socket.IO
-  const io = socketHandler.init(server);
-
-  io.on("connection", (socket) => {
-    console.log("Client connected with ID:", socket.id);
-
-    socket.on("userConnected", (data) => {
-      console.log("User connected:", data);
-      socket.userId = data.userId;
-      socket.userType = data.userType;
-      socket.emit("connectionConfirmed", {
-        message: "Successfully connected",
-        userId: data.userId,
-        userType: data.userType,
-      });
-    });
-
-    socket.on("disconnect", () => {
-      console.log("Client disconnected:", socket.id);
-    });
-
-    socket.on("error", (error) => {
-      console.error("Socket error:", error);
-    });
-  });
+  // Initialize Socket.IO on the server.
+  // The connection handler is registered in app.js AFTER this returns,
+  // so we do NOT attach any io.on('connection') here to avoid duplicates.
+  socketHandler.init(server);
 };

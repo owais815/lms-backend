@@ -1,24 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const supportRequestController = require('../controllers/supportRequestController');
+const isAuth = require('../middleware/is-auth');
 
 // Create a support request
-router.post('/', supportRequestController.createSupportRequest);
+router.post('/', isAuth, supportRequestController.createSupportRequest);
 
-// Get all support requests (for admin view)
-router.get('/', supportRequestController.getAllSupportRequests);
+// Get all support requests (admin view)
+router.get('/', isAuth, supportRequestController.getAllSupportRequests);
 
 // Get a single support request by ID
-router.get('/:id', supportRequestController.getSupportRequestById);
+router.get('/:id', isAuth, supportRequestController.getSupportRequestById);
 
 // Update a support request by ID
-router.put('/:id', supportRequestController.updateSupportRequest);
+router.put('/:id', isAuth, supportRequestController.updateSupportRequest);
 
 // Delete a support request by ID
-router.delete('/:id', supportRequestController.deleteSupportRequest);
+router.delete('/:id', isAuth, supportRequestController.deleteSupportRequest);
 
-// routes/supportRequestRoutes.js
-router.get('/user/:userId/:userType', supportRequestController.getSupportRequestsByUser);
-
+// Get requests by user
+router.get('/user/:userId/:userType', isAuth, supportRequestController.getSupportRequestsByUser);
 
 module.exports = router;

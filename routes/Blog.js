@@ -1,14 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const blogController = require("../controllers/blog");
-const Blog = require("../models/Blog");
+const isAuth = require("../middleware/is-auth");
 
-router.post("/add", blogController.addBlog);
-
+// Public: anyone can read blogs
 router.get("/", blogController.getBlogs);
-
 router.get("/:id", blogController.getBlog);
 
-router.delete("/:id", blogController.deleteBlog);
+// Auth required for mutations
+router.post("/add", isAuth, blogController.addBlog);
+router.delete("/:id", isAuth, blogController.deleteBlog);
 
 module.exports = router;

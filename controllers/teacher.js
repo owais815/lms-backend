@@ -127,7 +127,17 @@ exports.login = (req, res, next) => {
 
 // update Teacher Record
 exports.update = (req, res, next) => {
-  const teacherId = req.params.teacherId; // Assuming teacherId is passed in the URL params
+  const teacherId = req.params.teacherId;
+
+  // IDOR check: non-admins can only update their own record
+  if (req.userType !== 'ADMIN' && req.userType !== 'SUPER_ADMIN') {
+    if (String(req.userId) !== String(teacherId)) {
+      const error = new Error('Forbidden: you can only update your own profile.');
+      error.statusCode = 403;
+      return next(error);
+    }
+  }
+
   const updateFields = {};
 
   // Extract fields that can be updated from the request body

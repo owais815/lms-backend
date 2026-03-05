@@ -7,6 +7,7 @@ const Rights = require("../models/Rights");
 const AdminRights = require("../models/AdminRights");
 const Teacher = require("../models/Teacher");
 const { Op, Sequelize } = require("sequelize");
+const sequelize = require("../utils/database");
 const Student = require("../models/Student");
 const CourseDetails = require("../models/CourseDetails");
 const {
@@ -50,11 +51,19 @@ exports.signup = async (req, res, next) => {
     shift,
   } = req.body;
 
+  const t = await sequelize.transaction();
   try {
-    // Step 1: Hash the password
+    // Step 1: Validate plan before creating anything
+    const plan = await Plan.findByPk(planId, { transaction: t });
+    if (!plan) {
+      await t.rollback();
+      return res.status(404).json({ success: false, message: "Plan not found." });
+    }
+
+    // Step 2: Hash the password
     const hashedPwd = await bcrypt.hash(password, 12);
 
-    // Step 2: Create the student
+    // Step 3: Create the student
     const student = await Student.create({
       username,
       firstName,
@@ -72,25 +81,16 @@ exports.signup = async (req, res, next) => {
       suitableHours,
       nameForTeacher,
       shift: shift || null,
-    });
+    }, { transaction: t });
 
-    // Step 3: Fetch the plan details
-    const plan = await Plan.findByPk(planId);
-    if (!plan) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Plan not found." });
-    }
-
-    // Step 4: Determine the payment amount
-    const paymentAmount = amount || plan.price; // Use custom amount if provided, otherwise plan price
-
-    // Step 5: Record the payment
+    // Step 4: Record the payment (use custom amount if provided, otherwise plan price)
     const payment = await Payment.create({
       studentId: student.id,
-      amount: paymentAmount,
+      amount: amount || plan.price,
       purpose: "Plan Purchase",
-    });
+    }, { transaction: t });
+
+    await t.commit();
 
     res.status(201).json({
       success: true,
@@ -99,6 +99,7 @@ exports.signup = async (req, res, next) => {
       payment,
     });
   } catch (error) {
+    await t.rollback();
     if (!error.statusCode) {
       error.statusCode = 500;
     }
@@ -185,6 +186,15 @@ exports.delete = (req, res, next) => {
 
 exports.update = (req, res, next) => {
   const { studentId } = req.params;
+
+  // IDOR check: non-admins can only update their own record
+  if (req.userType !== 'ADMIN' && req.userType !== 'SUPER_ADMIN') {
+    if (String(req.userId) !== String(studentId)) {
+      const error = new Error('Forbidden: you can only update your own profile.');
+      error.statusCode = 403;
+      return next(error);
+    }
+  }
   const {
     username,
     firstName,

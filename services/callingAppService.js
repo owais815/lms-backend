@@ -11,7 +11,12 @@
 const CALLING_APP_URL = process.env.CALLING_APP_URL || 'http://localhost:3010';
 // Internal URL for backend→calling-app API calls — can stay on localhost to avoid SSL round-trip
 const CALLING_APP_API_URL = process.env.CALLING_APP_API_URL || CALLING_APP_URL;
-const CALLING_APP_API_SECRET = process.env.CALLING_APP_API_SECRET || 'lms_calling_secret_2026';
+// Secret must be set in .env — no hardcoded fallback
+const CALLING_APP_API_SECRET = process.env.CALLING_APP_API_SECRET;
+
+if (!CALLING_APP_API_SECRET) {
+  console.error('[callingAppService] CALLING_APP_API_SECRET is not set in environment variables. Calling-app API requests will fail.');
+}
 
 const API_BASE = `${CALLING_APP_API_URL}/api/v1`;
 
@@ -19,6 +24,10 @@ const API_BASE = `${CALLING_APP_API_URL}/api/v1`;
  * Make an authenticated request to the calling-app API.
  */
 async function callingAppRequest(path, method = 'GET', body = null) {
+  if (!CALLING_APP_API_SECRET) {
+    throw new Error('Calling-app API secret not configured. Set CALLING_APP_API_SECRET in environment.');
+  }
+
   const options = {
     method,
     headers: {
@@ -42,18 +51,6 @@ async function callingAppRequest(path, method = 'GET', body = null) {
 
 /**
  * Create a join URL for a calling-app room.
- *
- * No token is needed: calling-app config has host.protected=false which sets
- * hostCfg.authenticated=true server-wide, so the /join route always serves
- * the room page without requiring a token.
- *
- * Without a token in the URL, Room.js never sends peer_token over WebSocket,
- * and since user_auth=false the WebSocket auth block is skipped entirely —
- * preventing the JWT catch-block that would redirect to the landing page.
- *
- * Name encoding note: pass userName directly to URLSearchParams — it handles
- * percent-encoding automatically. Pre-encoding with encodeURIComponent causes
- * double-encoding (%20 → %2520) making the name appear as "Ali%20Sher" in room.
  *
  * @param {string} roomId       - Unique room identifier, e.g. 'lms-42'
  * @param {string} userName     - Display name of the participant

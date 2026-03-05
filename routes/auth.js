@@ -1,28 +1,24 @@
 const express = require('express');
 const {body} = require('express-validator');
-const Admin = require('../models/Admin');
 const authController = require('../controllers/auth');
 const { loginRateLimiter } = require('../middleware/rateLimiter');
+const isAuth = require('../middleware/is-auth');
+const checkPermission = require('../middleware/check-permission');
+const { PERMISSIONS } = require('../config/permissions');
 
 const router = express.Router();
 
 router.put('/signup',[
-    // body('email').isEmail().withMessage("Please enter a valid email.").custom((value,{req})=>{
-    //     return Admin.findOne({where:{email:value}}).then(userObj=>{
-    //         if(userObj){
-    //             return Promise.reject("E-mail already exist.!");
-    //         }
-    //     })
-    // }).normalizeEmail(),
-    // email validation ends here
     body('username').trim().isLength({min:5}),
     body('password').trim().isLength({min:5}),
     body('name').trim().not().isEmpty()
 ],authController.signup);
 
-
 router.post('/login', loginRateLimiter, authController.login);
-router.post('/addRole',authController.addRole);
-router.post('/addRights',authController.addRights);
-router.post('/addAdminRights',authController.addAdminRights);
+
+// Role/rights management — requires admin auth + roles:manage permission
+router.post('/addRole',        isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), authController.addRole);
+router.post('/addRights',      isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), authController.addRights);
+router.post('/addAdminRights', isAuth, checkPermission(PERMISSIONS.ROLES_MANAGE), authController.addAdminRights);
+
 module.exports = router;

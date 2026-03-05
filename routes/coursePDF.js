@@ -2,11 +2,10 @@
 
 const express = require('express');
 const multer = require('multer');
-const path = require('path');
 const router = express.Router();
 const ctrl = require('../controllers/coursePDF');
+const isAuth = require('../middleware/is-auth');
 
-// PDF-specific storage — same resources/ folder, same naming pattern
 const pdfStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'resources'),
   filename: (req, file, cb) => {
@@ -23,11 +22,15 @@ const pdfFilter = (req, file, cb) => {
   }
 };
 
-// Up to 10 PDFs per upload, field name "pdfs"
-const uploadPdfs = multer({ storage: pdfStorage, fileFilter: pdfFilter }).array('pdfs', 10);
+// Up to 10 PDFs per upload, 20MB per file
+const uploadPdfs = multer({
+  storage: pdfStorage,
+  fileFilter: pdfFilter,
+  limits: { fileSize: 20 * 1024 * 1024 },
+}).array('pdfs', 10);
 
-router.post('/:courseId', uploadPdfs, ctrl.uploadPDFs);
-router.get('/:courseId', ctrl.getCoursePDFs);
-router.delete('/:courseId/:pdfId', ctrl.deletePDF);
+router.post('/:courseId',          isAuth, uploadPdfs, ctrl.uploadPDFs);
+router.get('/:courseId',           isAuth, ctrl.getCoursePDFs);
+router.delete('/:courseId/:pdfId', isAuth, ctrl.deletePDF);
 
 module.exports = router;
