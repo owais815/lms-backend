@@ -18,6 +18,18 @@ const {
   Attendance,
   UpcomingClass,
   Courses,
+  Fee,
+  PlanChangeRequest,
+  TeacherStudent,
+  EnrolledStudents,
+  MyBookmark,
+  AdminFeedback,
+  MakeUpClass,
+  StudentFeedback,
+  UpcomingCourses,
+  ClassSchedule,
+  ClassSession,
+  SessionFeedback,
 } = require("../models/association");
 const Payment = require("../models/Payment");
 const Plan = require("../models/Plan");
@@ -162,26 +174,50 @@ exports.login = (req, res, next) => {
     });
 };
 
-exports.delete = (req, res, next) => {
+exports.delete = async (req, res, next) => {
   const studentId = req.params.studentId;
-  Student.findByPk(studentId)
-    .then((student) => {
-      if (!student) {
-        const error = new Error("Student not found!");
-        error.statusCode = 404;
-        throw error;
-      }
-      return student.destroy();
-    })
-    .then(() => {
-      res.status(200).json({ message: "Student Deleted Successfully" });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+  const t = await sequelize.transaction();
+  try {
+    const student = await Student.findByPk(studentId);
+    if (!student) {
+      const error = new Error("Student not found!");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Delete leaf records first (those that depend on ClassSession or other children)
+    await SessionFeedback.destroy({ where: { studentId }, transaction: t });
+    await Attendance.destroy({ where: { studentId }, transaction: t });
+    await QuizAttempt.destroy({ where: { studentId }, transaction: t });
+    await SubmittedAssignment.destroy({ where: { studentId }, transaction: t });
+    await Fee.destroy({ where: { studentId }, transaction: t });
+    await PlanChangeRequest.destroy({ where: { studentId }, transaction: t });
+    await Payment.destroy({ where: { studentId }, transaction: t });
+    await MyBookmark.destroy({ where: { studentId }, transaction: t });
+    await AdminFeedback.destroy({ where: { studentId }, transaction: t });
+    await MakeUpClass.destroy({ where: { studentId }, transaction: t });
+    await StudentFeedback.destroy({ where: { studentId }, transaction: t });
+    await UpcomingClass.destroy({ where: { studentId }, transaction: t });
+    await TeacherStudent.destroy({ where: { studentId }, transaction: t });
+    await EnrolledStudents.destroy({ where: { studentId }, transaction: t });
+
+    // ClassSession / ClassSchedule: nullify studentId (they may belong to other students too)
+    await ClassSession.update({ studentId: null }, { where: { studentId }, transaction: t });
+    await ClassSchedule.update({ studentId: null }, { where: { studentId }, transaction: t });
+
+    // Quiz / CourseDetails / UpcomingCourses: nullify rather than delete to preserve records
+    await Quiz.update({ studentId: null }, { where: { studentId }, transaction: t });
+    await CourseDetails.update({ studentId: null }, { where: { studentId }, transaction: t });
+    await UpcomingCourses.update({ studentId: null }, { where: { studentId }, transaction: t });
+
+    await student.destroy({ transaction: t });
+    await t.commit();
+    res.status(200).json({ message: "Student Deleted Successfully" });
+  } catch (err) {
+    await t.rollback();
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 
 exports.update = (req, res, next) => {
