@@ -48,6 +48,7 @@ async function generateSessions(schedule) {
     teacherId,
     studentId,
     courseDetailsId,
+    shift,
   } = schedule;
 
   const baseSession = {
@@ -61,6 +62,7 @@ async function generateSessions(schedule) {
     teacherId,
     studentId,
     courseDetailsId,
+    shift: shift || null,
   };
 
   if (recurrenceType === 'one-time') {
@@ -108,7 +110,7 @@ exports.createSchedule = async (req, res) => {
     const {
       title, description, recurrenceType, daysOfWeek,
       startTime, endTime, startDate, endDate,
-      meetingLink, courseId, teacherId, studentId, courseDetailsId,
+      meetingLink, courseId, teacherId, studentId, courseDetailsId, shift,
     } = req.body;
 
     if (!title || !startTime || !endTime || !startDate || !courseId || !teacherId) {
@@ -130,6 +132,7 @@ exports.createSchedule = async (req, res) => {
       courseId, teacherId,
       studentId: studentId || null,
       courseDetailsId: courseDetailsId || null,
+      shift: shift || null,
     });
 
     const sessionCount = await generateSessions(schedule);
@@ -152,7 +155,7 @@ exports.proposeSession = async (req, res) => {
   try {
     const {
       title, startTime, endTime, startDate,
-      meetingLink, courseId, teacherId, studentId, courseDetailsId,
+      meetingLink, courseId, teacherId, studentId, courseDetailsId, shift,
     } = req.body;
 
     if (!title || !startTime || !endTime || !startDate || !courseId || !teacherId) {
@@ -171,6 +174,7 @@ exports.proposeSession = async (req, res) => {
       courseId, teacherId,
       studentId: studentId || null,
       courseDetailsId: courseDetailsId || null,
+      shift: shift || null,
     });
 
     // Create a single session — will appear as "pending" for admin
@@ -184,6 +188,7 @@ exports.proposeSession = async (req, res) => {
       courseId, teacherId,
       studentId: studentId || null,
       courseDetailsId: courseDetailsId || null,
+      shift: shift || null,
     });
     await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
 
@@ -513,6 +518,7 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, student) {
       teacherImageUrl: teacher ? teacher.imageUrl : null,
       studentName: student ? `${student.firstName} ${student.lastName}` : null,
       cancellationReason: session.cancellationReason || null,
+      shift: session.shift || null,
     },
   };
 }
@@ -615,8 +621,19 @@ exports.getCalendarEvents = async (req, res) => {
         order: [['date', 'ASC']],
       });
     } else if (role === 'student') {
+      // Fetch student's shift to filter sessions
+      const studentRecord = await Student.findByPk(userId, { attributes: ['id', 'shift'] });
+      const studentShift = studentRecord ? studentRecord.shift : null;
+
+      const studentSessionWhere = { ...sessionWhere, studentId: userId };
+      if (studentShift) {
+        studentSessionWhere[Op.and] = [
+          { [Op.or]: [{ shift: studentShift }, { shift: null }] },
+        ];
+      }
+
       sessions = await ClassSession.findAll({
-        where: { ...sessionWhere, studentId: userId },
+        where: studentSessionWhere,
         include: [
           { model: ClassSchedule, as: 'schedule', attributes: ['status', 'meetingLink', 'createdBy'] },
           { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
@@ -626,22 +643,41 @@ exports.getCalendarEvents = async (req, res) => {
         order: [['date', 'ASC']],
       });
     } else if (role === 'parent') {
-      // Find all students linked to this parent
+      // Find all students linked to this parent (include their shift)
       const children = await Student.findAll({
         where: { parentId: userId },
-        attributes: ['id', 'firstName', 'lastName'],
+        attributes: ['id', 'firstName', 'lastName', 'shift'],
       });
       const childIds = children.map((c) => c.id);
-      sessions = await ClassSession.findAll({
-        where: { ...sessionWhere, studentId: { [Op.in]: childIds } },
-        include: [
-          { model: ClassSchedule, as: 'schedule', attributes: ['status', 'meetingLink', 'createdBy'] },
-          { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
-          { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
-          { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
-        ],
-        order: [['date', 'ASC']],
-      });
+
+      if (childIds.length === 0) {
+        sessions = [];
+      } else {
+        // Build per-child shift-aware OR conditions
+        const childConditions = childIds.map((cid) => {
+          const cShift = children.find((c) => c.id === cid)?.shift;
+          if (cShift) {
+            return { studentId: cid, [Op.or]: [{ shift: cShift }, { shift: null }] };
+          }
+          return { studentId: cid };
+        });
+
+        const parentSessionWhere = {
+          ...sessionWhere,
+          [Op.or]: childConditions,
+        };
+
+        sessions = await ClassSession.findAll({
+          where: parentSessionWhere,
+          include: [
+            { model: ClassSchedule, as: 'schedule', attributes: ['status', 'meetingLink', 'createdBy'] },
+            { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
+            { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
+            { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
+          ],
+          order: [['date', 'ASC']],
+        });
+      }
     }
 
     // Format sessions into FullCalendar events
