@@ -81,6 +81,11 @@ const ClassSession = sequelize.define('ClassSession', {
     allowNull: false,
     defaultValue: 'idle',
   },
+  shift: {
+    type: DataTypes.ENUM('Morning', 'Afternoon', 'Evening'),
+    allowNull: true,
+    defaultValue: null,
+  },
 }, {
   tableName: 'ClassSessions',
   timestamps: true,
