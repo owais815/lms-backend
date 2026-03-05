@@ -261,6 +261,13 @@ async function patchEnumColumns() {
     `ALTER TABLE TeacherAttendances ADD COLUMN status ENUM('Present','Absent') NOT NULL DEFAULT 'Absent'`,
     // Fees
     `ALTER TABLE Fees ADD COLUMN status ENUM('pending','paid','overdue','cancelled') NOT NULL DEFAULT 'pending'`,
+    // Shifts
+    `ALTER TABLE Students ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
+    `ALTER TABLE Teachers ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
+    `ALTER TABLE ClassSchedules ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
+    `ALTER TABLE ClassSessions ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
+    // ClassSessions sessionStatus
+    `ALTER TABLE ClassSessions ADD COLUMN sessionStatus ENUM('idle','live','ended') NOT NULL DEFAULT 'idle'`,
   ];
   for (const sql of patches) {
     try {
