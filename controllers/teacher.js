@@ -124,7 +124,7 @@ exports.update = (req, res, next) => {
   const updateFields = {};
 
   // Extract fields that can be updated from the request body
-  const { firstName, lastName, password, contact, cnic, canDirectlyPublish } = req.body;
+  const { firstName, lastName, password, contact, cnic, canDirectlyPublish, shift } = req.body;
 
   // Add the update fields to the updateFields object if they are provided
   if (firstName) {
@@ -147,6 +147,9 @@ exports.update = (req, res, next) => {
   }
   if (canDirectlyPublish !== undefined) {
     updateFields.canDirectlyPublish = canDirectlyPublish;
+  }
+  if (shift !== undefined) {
+    updateFields.shift = shift || null;
   }
 
   // Find the Teacher record by ID and update the fields
