@@ -45,6 +45,11 @@ const Teacher = sequelize.define('Teacher', {
     canDirectlyPublish: {
         type: Sequelize.BOOLEAN,
         defaultValue: true
+    },
+    shift: {
+        type: Sequelize.ENUM('Morning', 'Afternoon', 'Evening'),
+        allowNull: true,
+        defaultValue: null
     }
 });
 
