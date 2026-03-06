@@ -30,6 +30,16 @@ router.post('/login', loginRateLimiter, teacherController.login);
 
 // ─── Admin-only routes ───────────────────────────────────────────────────────
 
+// Check username availability (used during teacher creation)
+router.get('/check-username', isAuth, async (req, res) => {
+  const { username } = req.query;
+  if (!username || String(username).trim().length < 3) {
+    return res.status(400).json({ available: false, message: 'Username too short' });
+  }
+  const existing = await Teacher.findOne({ where: { username: String(username).trim() } });
+  res.json({ available: !existing });
+});
+
 router.get('/teachers',    isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.getAllTeachers);
 router.get('/count',       isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.countAllTeachers);
 router.delete('/:teacherId', isAuth, checkPermission(PERMISSIONS.TEACHERS_DELETE), teacherController.delete);
