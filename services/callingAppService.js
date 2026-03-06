@@ -62,7 +62,13 @@ async function createJoinUrl(roomId, userName, isPresenter, audio = false, video
   // MiroTalk blocks entry if another peer with the exact same name is already in the room
   // (e.g. on iframe refresh or duplicate names). The suffix keeps display names readable
   // while guaranteeing uniqueness.
-  const suffix = Math.random().toString(36).slice(2, 5);
+  // Use timestamp (last 4 base-36 chars) + 3 random chars for a 7-char suffix.
+  // The timestamp component makes each call unique within its millisecond, and the
+  // random component handles concurrent calls in the same millisecond. This is far
+  // more robust than the old 3-char-only suffix (46K possibilities) and prevents
+  // the "Username already in use" collision that occurs when MiroTalk's server-side
+  // peer cleanup hasn't finished before a reconnect or rejoin attempt arrives.
+  const suffix = Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 5);
   const uniqueName = `${userName}-${suffix}`;
 
   const params = new URLSearchParams({
