@@ -33,16 +33,18 @@ const checkPermission = (requiredPermission) => async (req, res, next) => {
 
     const roleName = admin.Role ? admin.Role.role : null;
 
-    // ADMIN / SUPER_ADMIN bypass all checks
+    // Admins without a specific role are full admins (original / super admin)
+    if (!admin.roleId) {
+      return next();
+    }
+
+    // Named full-admin roles (ADMIN / SUPER_ADMIN) bypass all checks
     if (roleName && FULL_ADMIN_ROLES.includes(roleName)) {
       return next();
     }
 
     // Sub-admin: check if their role has the required permission
     const roleId = admin.roleId || req.roleId;
-    if (!roleId) {
-      return res.status(403).json({ message: 'Access denied: no role assigned.' });
-    }
 
     const found = await RolesRights.findOne({
       where: { roleId, rights: requiredPermission },

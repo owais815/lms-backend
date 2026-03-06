@@ -175,7 +175,13 @@ exports.login = async (req, res, next) => {
                 isSystem:    true,
                 isActive:    true,
             }
-            : null;
+            : {
+                id:          null,
+                name:        'ADMIN',   // No specific role → treat as full admin
+                description: null,
+                isSystem:    true,
+                isActive:    true,
+            };
 
         res.status(200).json({
             token,
