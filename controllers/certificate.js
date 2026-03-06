@@ -219,8 +219,69 @@ const deleteCertificate = async (req, res) => {
     }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/certificates/bulk-create
+// Admin: create certificates for multiple students at once (no file upload)
+// Body (JSON): courseId, studentIds[], status, notes
+// ---------------------------------------------------------------------------
+const bulkCreateCertificates = async (req, res) => {
+    try {
+        const { courseId, studentIds, status, notes } = req.body;
+
+        if (!courseId || !Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ message: 'courseId and at least one studentId are required.' });
+        }
+
+        const certStatus = status === 'upcoming' ? 'upcoming' : 'issued';
+
+        const course = await Courses.findByPk(courseId);
+        if (!course) return res.status(404).json({ message: 'Course not found.' });
+
+        const created = [];
+        const skipped = [];
+
+        for (const studentId of studentIds) {
+            const student = await Student.findByPk(studentId);
+            if (!student) {
+                skipped.push({ studentId, reason: 'Student not found.' });
+                continue;
+            }
+
+            const existing = await Certificate.findOne({
+                where: { courseId, studentId, status: { [Op.in]: ['issued', 'upcoming'] } },
+            });
+            if (existing) {
+                skipped.push({ studentId, reason: `Already has a ${existing.status} certificate.` });
+                continue;
+            }
+
+            const certificate = await Certificate.create({
+                courseId,
+                studentId,
+                templateImageUrl: null,
+                issuedAt: certStatus === 'issued' ? new Date() : null,
+                status: certStatus,
+                notes: notes || null,
+            });
+
+            const full = await Certificate.findByPk(certificate.id, { include: fullInclude });
+            created.push(full);
+        }
+
+        res.status(201).json({
+            message: `${created.length} certificate(s) created, ${skipped.length} skipped.`,
+            created,
+            skipped,
+        });
+    } catch (err) {
+        console.error('[bulkCreateCertificates]', err);
+        res.status(500).json({ message: 'Failed to bulk create certificates.' });
+    }
+};
+
 module.exports = {
     createCertificate,
+    bulkCreateCertificates,
     issueCertificateFromUpcoming,
     getAllCertificates,
     getStudentCertificates,
