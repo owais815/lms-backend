@@ -75,6 +75,10 @@ const PERMISSIONS = {
   // Subscription Plans
   PLANS_VIEW:   'plans:view',
   PLANS_MANAGE: 'plans:manage',
+
+  // Certificates
+  CERTIFICATES_VIEW:   'certificates:view',
+  CERTIFICATES_MANAGE: 'certificates:manage',
 };
 
 // Roles that bypass all permission checks

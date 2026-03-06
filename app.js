@@ -35,6 +35,7 @@ const teacherAttendanceRoutes = require("./routes/teacherAttendance");
 const sessionFeedbackRoutes = require("./routes/feedback");
 const feesRoutes = require("./routes/fees");
 const faqRoutes = require("./routes/faq");
+const certificateRoutes = require("./routes/certificate");
 
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
@@ -184,6 +185,7 @@ app.use("/api/teacher-attendance", teacherAttendanceRoutes);
 app.use("/api/session-feedback", sessionFeedbackRoutes);
 app.use("/api/fees", feesRoutes);
 app.use("/api/faq", faqRoutes);
+app.use("/api/certificates", certificateRoutes);
 
 // ── Global error handler ─────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
@@ -234,6 +236,7 @@ async function patchEnumColumns() {
     `ALTER TABLE ClassSchedules ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
     `ALTER TABLE ClassSessions ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
     `ALTER TABLE ClassSessions ADD COLUMN sessionStatus ENUM('idle','live','ended') NOT NULL DEFAULT 'idle'`,
+    `ALTER TABLE Certificates ADD COLUMN status ENUM('upcoming','issued','revoked') NOT NULL DEFAULT 'issued'`,
   ];
   for (const sql of patches) {
     try {
