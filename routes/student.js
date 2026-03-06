@@ -6,6 +6,7 @@ const { loginRateLimiter } = require('../middleware/rateLimiter');
 const isAuth = require('../middleware/is-auth');
 const checkPermission = require('../middleware/check-permission');
 const { PERMISSIONS } = require('../config/permissions');
+const { validatePhone } = require('../utils/phoneCountries');
 
 const router = express.Router();
 
@@ -19,6 +20,7 @@ router.put('/signup', [
   }),
   body('password').trim().isLength({ min: 5 }),
   body('firstName').trim().not().isEmpty(),
+  body('contact').optional({ checkFalsy: true }).trim().custom(validatePhone),
 ], studentController.signup);
 
 router.post('/login', loginRateLimiter, studentController.login);
