@@ -6,6 +6,7 @@ const Role = require("../models/Roles");
 const Rights = require("../models/Rights");
 const AdminRights = require("../models/AdminRights");
 const Teacher = require("../models/Teacher");
+const Parent = require("../models/Parent");
 const { Op, Sequelize } = require("sequelize");
 const sequelize = require("../utils/database");
 const Student = require("../models/Student");
@@ -239,7 +240,7 @@ exports.delete = async (req, res, next) => {
   }
 };
 
-exports.update = (req, res, next) => {
+exports.update = async (req, res, next) => {
   const { studentId } = req.params;
 
   // IDOR check: non-admins can only update their own record
@@ -273,6 +274,19 @@ exports.update = (req, res, next) => {
 
   let updateFields = {};
   if (username) {
+    // Check that the new username isn't taken by any existing user (excluding current student)
+    const current = await Student.findByPk(studentId, { attributes: ['username'] });
+    if (!current || username.trim() !== current.username) {
+      const [existingTeacher, existingStudent, existingParent, existingAdmin] = await Promise.all([
+        Teacher.findOne({ where: { username } }),
+        Student.findOne({ where: { username, id: { [Op.ne]: studentId } } }),
+        Parent.findOne({ where: { username } }),
+        Admin.findOne({ where: { username } }),
+      ]);
+      if (existingTeacher || existingStudent || existingParent || existingAdmin) {
+        return res.status(409).json({ message: 'Username is already taken.' });
+      }
+    }
     updateFields.username = username;
   }
   if (firstName) {
@@ -330,27 +344,17 @@ exports.update = (req, res, next) => {
     updateFields.shift = shift || null;
   }
 
-  Student.findByPk(studentId)
-    .then((student) => {
-      if (!student) {
-        const error = new Error("Student not found!");
-        error.statusCode = 404;
-        throw error;
-      }
-      return student.update(updateFields);
-    })
-    .then((updatedStudent) => {
-      res.status(200).json({
-        message: "Student updated successfully!",
-        student: updatedStudent,
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+  try {
+    const student = await Student.findByPk(studentId);
+    if (!student) {
+      return res.status(404).json({ message: "Student not found!" });
+    }
+    const updatedStudent = await student.update(updateFields);
+    res.status(200).json({ message: "Student updated successfully!", student: updatedStudent });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 
 exports.uploadImage = async (req, res, next) => {

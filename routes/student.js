@@ -2,6 +2,9 @@ const express = require('express');
 const { body } = require('express-validator');
 const studentController = require('../controllers/student');
 const Student = require('../models/Student');
+const Teacher = require('../models/Teacher');
+const Parent = require('../models/Parent');
+const Admin = require('../models/Admin');
 const { loginRateLimiter } = require('../middleware/rateLimiter');
 const isAuth = require('../middleware/is-auth');
 const checkPermission = require('../middleware/check-permission');
@@ -13,10 +16,14 @@ const router = express.Router();
 // ─── Public routes ───────────────────────────────────────────────────────────
 
 router.put('/signup', [
-  body('username').trim().isLength({ min: 3 }).custom((value) => {
-    return Student.findOne({ where: { username: value } }).then(userObj => {
-      if (userObj) return Promise.reject('Username already exist.!');
-    });
+  body('username').trim().isLength({ min: 3 }).custom(async (value) => {
+    const [teacher, student, parent, admin] = await Promise.all([
+      Teacher.findOne({ where: { username: value } }),
+      Student.findOne({ where: { username: value } }),
+      Parent.findOne({ where: { username: value } }),
+      Admin.findOne({ where: { username: value } }),
+    ]);
+    if (teacher || student || parent || admin) return Promise.reject('Username already exists.');
   }),
   body('password').trim().isLength({ min: 5 }),
   body('firstName').trim().not().isEmpty(),

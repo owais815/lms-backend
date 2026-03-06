@@ -884,10 +884,15 @@ exports.createAdmin = async (req, res) => {
     try {
         const { name, username, password, role } = req.body;
 
-        // Check if the username already exists
-        const existingAdmin = await Admin.findAll({ where: { username } });
-        if (existingAdmin.length > 0) {
-            return res.status(400).json({ message: "Username already exists" });
+        // Check if the username already exists across all user types
+        const [existingTeacher, existingStudent, existingParent, existingAdmin] = await Promise.all([
+            Teacher.findOne({ where: { username } }),
+            Student.findOne({ where: { username } }),
+            Parent.findOne({ where: { username } }),
+            Admin.findOne({ where: { username } }),
+        ]);
+        if (existingTeacher || existingStudent || existingParent || existingAdmin) {
+            return res.status(409).json({ message: "Username is already taken." });
         }
 
         // Hash the password before storing
@@ -955,6 +960,19 @@ exports.updateAdmin = async (req, res) => {
         const admin = await Admin.findByPk(id);
         if (!admin) {
             return res.status(404).json({ message: "Admin not found" });
+        }
+
+        // Check username uniqueness across all user types (excluding current admin)
+        if (username && username !== admin.username) {
+            const [existingTeacher, existingStudent, existingParent, existingOtherAdmin] = await Promise.all([
+                Teacher.findOne({ where: { username } }),
+                Student.findOne({ where: { username } }),
+                Parent.findOne({ where: { username } }),
+                Admin.findOne({ where: { username, id: { [Op.ne]: id } } }),
+            ]);
+            if (existingTeacher || existingStudent || existingParent || existingOtherAdmin) {
+                return res.status(409).json({ message: "Username is already taken." });
+            }
         }
 
         // Find the role if provided
