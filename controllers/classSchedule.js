@@ -908,8 +908,15 @@ exports.joinSession = async (req, res) => {
     let userName = 'Participant';
     if (role === 'teacher' && session.Teacher) {
       userName = `${session.Teacher.firstName} ${session.Teacher.lastName}`;
-    } else if (role === 'student' && session.Student) {
-      userName = `${session.Student.firstName} ${session.Student.lastName}`;
+    } else if (role === 'student') {
+      // For group sessions session.Student is null (no specific student tied to the session).
+      // Always look up the actual requesting student by userId so every participant
+      // gets their real name — prevents all students falling back to "Participant"
+      // which causes username-collision errors in MiroTalk.
+      const requestingStudent = session.Student || await Student.findByPk(userId, { attributes: ['firstName', 'lastName'] });
+      if (requestingStudent) {
+        userName = `${requestingStudent.firstName} ${requestingStudent.lastName}`;
+      }
     } else if (role === 'admin') {
       userName = 'Admin';
     }
