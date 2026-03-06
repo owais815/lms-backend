@@ -2,6 +2,9 @@ const express = require('express');
 const { body } = require('express-validator');
 const teacherController = require('../controllers/teacher');
 const Teacher = require('../models/Teacher');
+const Student = require('../models/Student');
+const Parent = require('../models/Parent');
+const Admin = require('../models/Admin');
 const { loginRateLimiter } = require('../middleware/rateLimiter');
 const isAuth = require('../middleware/is-auth');
 const checkPermission = require('../middleware/check-permission');
@@ -30,14 +33,20 @@ router.post('/login', loginRateLimiter, teacherController.login);
 
 // ─── Admin-only routes ───────────────────────────────────────────────────────
 
-// Check username availability (used during teacher creation)
+// Check username availability globally across all user types
 router.get('/check-username', isAuth, async (req, res) => {
   const { username } = req.query;
   if (!username || String(username).trim().length < 3) {
     return res.status(400).json({ available: false, message: 'Username too short' });
   }
-  const existing = await Teacher.findOne({ where: { username: String(username).trim() } });
-  res.json({ available: !existing });
+  const u = String(username).trim();
+  const [teacher, student, parent, admin] = await Promise.all([
+    Teacher.findOne({ where: { username: u } }),
+    Student.findOne({ where: { username: u } }),
+    Parent.findOne({ where: { username: u } }),
+    Admin.findOne({ where: { username: u } }),
+  ]);
+  res.json({ available: !(teacher || student || parent || admin) });
 });
 
 router.get('/teachers',    isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.getAllTeachers);
