@@ -624,12 +624,18 @@ exports.getCalendarEvents = async (req, res) => {
         order: [['date', 'ASC']],
       });
     } else if (role === 'student') {
-      // Fetch student's shift to filter group sessions
-      const studentRecord = await Student.findByPk(userId, { attributes: ['id', 'shift'] });
+      // Fetch student's shift AND enrolled courses in parallel
+      const [studentRecord, enrolledCourses] = await Promise.all([
+        Student.findByPk(userId, { attributes: ['id', 'shift'] }),
+        CourseDetails.findAll({ where: { studentId: userId }, attributes: ['courseId'] }),
+      ]);
       const studentShift = studentRecord ? studentRecord.shift : null;
+      const enrolledCourseIds = enrolledCourses.map((cd) => cd.courseId);
+      // Use -1 sentinel so Op.in never throws on empty array (matches nothing)
+      const courseIdFilter = enrolledCourseIds.length > 0 ? { [Op.in]: enrolledCourseIds } : { [Op.eq]: -1 };
 
-      // Personal sessions (studentId = userId): always visible regardless of shift
-      // Group sessions (studentId = null): visible when shift matches student's shift or has no shift
+      // Personal sessions (studentId = userId): always visible regardless of shift or course
+      // Group sessions (studentId = null): only for enrolled courses + matching shift
       let studentSessionWhere;
       if (studentShift) {
         studentSessionWhere = {
@@ -639,16 +645,20 @@ exports.getCalendarEvents = async (req, res) => {
             {
               [Op.and]: [
                 { studentId: null },
+                { courseId: courseIdFilter },
                 { [Op.or]: [{ shift: studentShift }, { shift: null }] },
               ],
             },
           ],
         };
       } else {
-        // No shift assigned: show personal sessions + all group sessions
+        // No shift assigned: show personal sessions + enrolled-course group sessions (any shift)
         studentSessionWhere = {
           ...sessionWhere,
-          [Op.or]: [{ studentId: userId }, { studentId: null }],
+          [Op.or]: [
+            { studentId: userId },
+            { [Op.and]: [{ studentId: null }, { courseId: courseIdFilter }] },
+          ],
         };
       }
 
@@ -663,32 +673,43 @@ exports.getCalendarEvents = async (req, res) => {
         order: [['date', 'ASC']],
       });
     } else if (role === 'parent') {
-      // Find all students linked to this parent (include their shift)
+      // Find all children of this parent (with their shift)
       const children = await Student.findAll({
         where: { parentId: userId },
         attributes: ['id', 'firstName', 'lastName', 'shift'],
       });
-      const childIds = children.map((c) => c.id);
 
-      if (childIds.length === 0) {
+      if (children.length === 0) {
         sessions = [];
       } else {
-        // Personal sessions for each child: always visible.
-        // Group sessions (studentId=null): visible per child's shift.
-        const childPersonal = childIds.map((cid) => ({ studentId: cid }));
+        // Fetch each child's enrolled courses in parallel
+        const childEnrollments = await Promise.all(
+          children.map(async (child) => {
+            const cds = await CourseDetails.findAll({ where: { studentId: child.id }, attributes: ['courseId'] });
+            return { child, courseIds: cds.map((cd) => cd.courseId) };
+          })
+        );
+
+        // Personal sessions for each child: always visible
+        const childPersonal = children.map((c) => ({ studentId: c.id }));
+
+        // Group sessions: per child — enrolled courses only + matching shift
         const groupConditions = [];
-        for (const child of children) {
+        for (const { child, courseIds } of childEnrollments) {
+          const childCourseFilter = courseIds.length > 0 ? { [Op.in]: courseIds } : { [Op.eq]: -1 };
           if (child.shift) {
             groupConditions.push({
               [Op.and]: [
                 { studentId: null },
+                { courseId: childCourseFilter },
                 { [Op.or]: [{ shift: child.shift }, { shift: null }] },
               ],
             });
           } else {
-            // Child has no shift — they can see all group sessions
-            groupConditions.push({ studentId: null });
-            break; // one un-shifted child means all group sessions are visible
+            // Child has no shift: can see enrolled-course group sessions of any shift
+            groupConditions.push({
+              [Op.and]: [{ studentId: null }, { courseId: childCourseFilter }],
+            });
           }
         }
 
