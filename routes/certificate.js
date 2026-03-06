@@ -3,6 +3,7 @@ const router = express.Router();
 const isAuth = require('../middleware/is-auth');
 const {
     createCertificate,
+    bulkCreateCertificates,
     issueCertificateFromUpcoming,
     getAllCertificates,
     getStudentCertificates,
@@ -17,6 +18,9 @@ router.use(isAuth);
 
 // Admin: create a certificate (upcoming or issued) — global multer handles file
 router.post('/create', createCertificate);
+
+// Admin: bulk create certificates for multiple students (JSON body, no file)
+router.post('/bulk-create', bulkCreateCertificates);
 
 // Admin: promote upcoming → issued
 router.put('/:id/issue', issueCertificateFromUpcoming);
