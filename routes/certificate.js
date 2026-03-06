@@ -8,6 +8,7 @@ const {
     getStudentCertificates,
     uploadCertificateImage,
     revokeCertificate,
+    restoreCertificate,
     deleteCertificate,
 } = require('../controllers/certificate');
 
@@ -31,6 +32,9 @@ router.put('/:id/upload-image', uploadCertificateImage);
 
 // Admin: revoke an issued certificate
 router.put('/:id/revoke', revokeCertificate);
+
+// Admin: restore a revoked certificate back to issued
+router.put('/:id/restore', restoreCertificate);
 
 // Admin: delete a certificate
 router.delete('/:id', deleteCertificate);
