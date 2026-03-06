@@ -179,6 +179,29 @@ const revokeCertificate = async (req, res) => {
 };
 
 // ---------------------------------------------------------------------------
+// PUT /api/certificates/:id/restore
+// Admin: restore a revoked certificate back to issued
+// ---------------------------------------------------------------------------
+const restoreCertificate = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const cert = await Certificate.findByPk(id);
+        if (!cert) return res.status(404).json({ message: 'Certificate not found.' });
+        if (cert.status !== 'revoked') {
+            return res.status(400).json({ message: 'Only revoked certificates can be restored.' });
+        }
+
+        cert.status = 'issued';
+        await cert.save();
+
+        res.json({ message: 'Certificate restored successfully.' });
+    } catch (err) {
+        console.error('[restoreCertificate]', err);
+        res.status(500).json({ message: 'Failed to restore certificate.' });
+    }
+};
+
+// ---------------------------------------------------------------------------
 // DELETE /api/certificates/:id
 // Admin: permanently delete any certificate
 // ---------------------------------------------------------------------------
@@ -203,5 +226,6 @@ module.exports = {
     getStudentCertificates,
     uploadCertificateImage,
     revokeCertificate,
+    restoreCertificate,
     deleteCertificate,
 };
