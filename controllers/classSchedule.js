@@ -940,7 +940,7 @@ exports.startSession = async (req, res) => {
       return res.json({ message: 'Session already live', sessionStatus: 'live' });
     }
 
-    await session.update({ sessionStatus: 'live' });
+    await session.update({ sessionStatus: 'live', liveStartedAt: new Date() });
 
     // Emit real-time notification to all subscribed clients
     try {

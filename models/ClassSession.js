@@ -81,6 +81,12 @@ const ClassSession = sequelize.define('ClassSession', {
     allowNull: false,
     defaultValue: 'idle',
   },
+  // Timestamp set when teacher starts the session — used by auto-end cron for grace period
+  liveStartedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    defaultValue: null,
+  },
   shift: {
     type: DataTypes.ENUM('Morning', 'Afternoon', 'Evening'),
     allowNull: true,

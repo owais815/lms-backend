@@ -39,6 +39,7 @@ const faqRoutes = require("./routes/faq");
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
 const { startOverdueFeesCron } = require('./Schedular/markOverdueFees');
+const { startAutoEndSessionsCron } = require('./Schedular/autoEndSessions');
 const isAuth = require('./middleware/is-auth');
 
 // Choose the environment
@@ -261,6 +262,7 @@ sequelize
     cleanupAnnouncements();
     startMessageCleanup(io);
     startOverdueFeesCron();
+    startAutoEndSessionsCron();
 
     console.log(`[app] Server started in ${env} mode.`);
   })
