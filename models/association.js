@@ -32,6 +32,7 @@ const TeacherAttendance = require("./TeacherAttendance");
 const SessionFeedback = require("./SessionFeedback");
 const Fee = require("./Fee");
 const Certificate = require("./Certificate");
+const Parent = require("./Parent");
 
 // Setup associations
 Teacher.belongsToMany(Student, {
@@ -49,6 +50,7 @@ CourseDetails.belongsTo(Courses, { foreignKey: "courseId" });
 
 CourseDetails.belongsTo(Teacher, { foreignKey: "teacherId" });
 CourseDetails.belongsTo(Student, { foreignKey: "studentId" });
+Student.hasMany(CourseDetails, { foreignKey: "studentId" });
 
 Courses.hasMany(UpcomingCourses, { foreignKey: "courseId" });
 UpcomingCourses.belongsTo(Courses, { foreignKey: "courseId" });
@@ -196,6 +198,10 @@ Certificate.belongsTo(Student, { foreignKey: 'studentId' });
 Courses.hasMany(Certificate, { foreignKey: 'courseId' });
 Student.hasMany(Certificate, { foreignKey: 'studentId' });
 
+// Parent-Student associations
+Student.belongsTo(Parent, { foreignKey: 'parentId', as: 'Parent' });
+Parent.hasMany(Student, { foreignKey: 'parentId', as: 'children' });
+
 module.exports = {
   Teacher,
   Fee,
@@ -226,4 +232,5 @@ module.exports = {
   TeacherAttendance,
   SessionFeedback,
   Certificate,
+  Parent,
 };
