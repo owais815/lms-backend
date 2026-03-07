@@ -416,17 +416,104 @@ exports.getProfileImage = async (req, res, next) => {
   }
 };
 
-exports.getAllStudents = (req, res, next) => {
-  Student.findAll()
-    .then((students) => {
-      res.status(200).json({ students: students });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+exports.getAllStudents = async (req, res, next) => {
+  try {
+    const students = await Student.findAll({
+      attributes: { exclude: ['password'] },
+      include: [
+        {
+          model: Plan,
+          attributes: ['id', 'name'],
+          required: false,
+        },
+        {
+          model: Teacher,
+          through: { attributes: [] },
+          attributes: ['id', 'firstName', 'lastName'],
+          required: false,
+        },
+        {
+          model: Parent,
+          as: 'Parent',
+          attributes: ['id', 'firstName', 'lastName'],
+          required: false,
+        },
+        {
+          model: CourseDetails,
+          attributes: ['id'],
+          required: false,
+          include: [
+            {
+              model: Courses,
+              attributes: ['courseName'],
+              required: false,
+            },
+          ],
+        },
+        {
+          model: Fee,
+          attributes: ['id', 'status'],
+          required: false,
+        },
+      ],
     });
+
+    // Normalize each student for the frontend
+    const normalized = students.map((s) => {
+      const raw = s.toJSON();
+
+      // Teacher: first assigned teacher
+      const teacher = raw.Teachers && raw.Teachers.length > 0 ? raw.Teachers[0] : null;
+
+      // Course: first enrolled course name
+      const course =
+        raw.CourseDetails && raw.CourseDetails.length > 0 && raw.CourseDetails[0].Course
+          ? raw.CourseDetails[0].Course.courseName
+          : null;
+
+      // Fee status: any pending/overdue → "unpaid"; all paid → "paid"; none → "none"
+      let feeStatus = 'none';
+      if (raw.Fees && raw.Fees.length > 0) {
+        const hasUnpaid = raw.Fees.some((f) => f.status === 'pending' || f.status === 'overdue');
+        feeStatus = hasUnpaid ? 'unpaid' : 'paid';
+      }
+
+      return {
+        ...raw,
+        plan: raw.Plan || null,
+        assignedTeacher: teacher,
+        parent: raw.Parent || null,
+        courseName: course,
+        feeStatus,
+        isAssigned: !!(teacher),
+        // clean up Sequelize association keys
+        Plan: undefined,
+        Teachers: undefined,
+        Parent: undefined,
+        CourseDetails: undefined,
+        Fees: undefined,
+      };
+    });
+
+    res.status(200).json({ students: normalized });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};
+
+exports.toggleStatus = async (req, res, next) => {
+  const { studentId } = req.params;
+  try {
+    const student = await Student.findByPk(studentId);
+    if (!student) return res.status(404).json({ message: 'Student not found.' });
+    const newStatus = student.status === 'active' ? 'inactive' : 'active';
+    await student.update({ status: newStatus });
+    res.status(200).json({ message: 'Status updated.', status: newStatus, id: student.id });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 exports.getStudentById = (req, res, next) => {
   const studentId = req.params.studentId;
