@@ -63,6 +63,8 @@ exports.signup = async (req, res, next) => {
     flexibleHours,
     suitableHours,
     nameForTeacher,
+    teacherId,
+    courseId,
     shift,
   } = req.body;
 
@@ -98,7 +100,20 @@ exports.signup = async (req, res, next) => {
       shift: shift || null,
     }, { transaction: t });
 
-    // Step 4: Record the payment (use custom amount if provided, otherwise plan price)
+    // Step 4: Assign teacher if provided (TeacherStudent M2M)
+    if (teacherId) {
+      await TeacherStudent.create({ TeacherId: teacherId, StudentId: student.id }, { transaction: t });
+    }
+
+    // Step 5: Assign course if provided (CourseDetails enrollment)
+    if (courseId) {
+      const existing = await CourseDetails.findOne({ where: { studentId: student.id, courseId }, transaction: t });
+      if (!existing) {
+        await CourseDetails.create({ studentId: student.id, courseId, teacherId: teacherId || null }, { transaction: t });
+      }
+    }
+
+    // Step 6: Record the payment (use custom amount if provided, otherwise plan price)
     const payment = await Payment.create({
       studentId: student.id,
       amount: amount || plan.price,
@@ -268,6 +283,8 @@ exports.update = async (req, res, next) => {
     flexibleHours,
     suitableHours,
     nameForTeacher,
+    teacherId,
+    courseId,
     planId,
     shift,
   } = req.body;
@@ -350,6 +367,24 @@ exports.update = async (req, res, next) => {
       return res.status(404).json({ message: "Student not found!" });
     }
     const updatedStudent = await student.update(updateFields);
+
+    // Handle teacher assignment change (TeacherStudent M2M)
+    if (teacherId !== undefined) {
+      await TeacherStudent.destroy({ where: { StudentId: studentId } });
+      if (teacherId) {
+        await TeacherStudent.create({ TeacherId: teacherId, StudentId: studentId });
+      }
+    }
+
+    // Handle course assignment change (CourseDetails enrollment)
+    if (courseId !== undefined) {
+      // Remove all existing CourseDetails for this student (simple: one course per student in admin form)
+      await CourseDetails.destroy({ where: { studentId } });
+      if (courseId) {
+        await CourseDetails.create({ studentId, courseId, teacherId: teacherId || null });
+      }
+    }
+
     res.status(200).json({ message: "Student updated successfully!", student: updatedStudent });
   } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
@@ -440,12 +475,12 @@ exports.getAllStudents = async (req, res, next) => {
         },
         {
           model: CourseDetails,
-          attributes: ['id'],
+          attributes: ['id', 'courseId'],
           required: false,
           include: [
             {
               model: Courses,
-              attributes: ['courseName'],
+              attributes: ['id', 'courseName'],
               required: false,
             },
           ],
@@ -465,11 +500,11 @@ exports.getAllStudents = async (req, res, next) => {
       // Teacher: first assigned teacher
       const teacher = raw.Teachers && raw.Teachers.length > 0 ? raw.Teachers[0] : null;
 
-      // Course: first enrolled course name
-      const course =
-        raw.CourseDetails && raw.CourseDetails.length > 0 && raw.CourseDetails[0].Course
-          ? raw.CourseDetails[0].Course.courseName
-          : null;
+      // Course: first enrolled course
+      const firstCourseDetails = raw.CourseDetails && raw.CourseDetails.length > 0 ? raw.CourseDetails[0] : null;
+      const course = firstCourseDetails?.Course?.courseName ?? null;
+      const courseId = firstCourseDetails?.courseId ?? null;
+      const courseDetailsId = firstCourseDetails?.id ?? null;
 
       // Fee status: any pending/overdue → "unpaid"; all paid → "paid"; none → "none"
       let feeStatus = 'none';
@@ -484,6 +519,8 @@ exports.getAllStudents = async (req, res, next) => {
         assignedTeacher: teacher,
         parent: raw.Parent || null,
         courseName: course,
+        courseId,
+        courseDetailsId,
         feeStatus,
         isAssigned: !!(teacher),
         // clean up Sequelize association keys
