@@ -34,7 +34,8 @@ router.post('/login', loginRateLimiter, studentController.login);
 
 // ─── Admin-only routes ───────────────────────────────────────────────────────
 
-router.get('/getAll',        isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW),   studentController.getAllStudents);
+router.get('/getAll',                  isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW),   studentController.getAllStudents);
+router.patch('/:studentId/status',     isAuth, checkPermission(PERMISSIONS.STUDENTS_EDIT),   studentController.toggleStatus);
 router.get('/count',         isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW),   studentController.countAllStudents);
 router.get('/recentCount',   isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW),   studentController.countRecentStudents);
 router.delete('/:studentId', isAuth, checkPermission(PERMISSIONS.STUDENTS_DELETE), studentController.delete);
