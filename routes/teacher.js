@@ -53,9 +53,10 @@ router.get('/check-username', isAuth, async (req, res) => {
   res.json({ available: !(teacher || student || parent || admin) });
 });
 
-router.get('/teachers',    isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.getAllTeachers);
-router.get('/count',       isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.countAllTeachers);
-router.delete('/:teacherId', isAuth, checkPermission(PERMISSIONS.TEACHERS_DELETE), teacherController.delete);
+router.get('/teachers',       isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.getAllTeachers);
+router.get('/count',          isAuth, checkPermission(PERMISSIONS.TEACHERS_VIEW),   teacherController.countAllTeachers);
+router.delete('/bulk',        isAuth, checkPermission(PERMISSIONS.TEACHERS_DELETE), teacherController.bulkDelete);
+router.delete('/:teacherId',  isAuth, checkPermission(PERMISSIONS.TEACHERS_DELETE), teacherController.delete);
 
 // ─── Authenticated routes (teacher or admin) ─────────────────────────────────
 
