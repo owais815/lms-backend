@@ -241,22 +241,62 @@ exports.delete = async (req, res, next) => {
   }
 };
 
-// getAllTeachers
-
+// getAllTeachers — includes courseCount per teacher via subquery
 exports.getAllTeachers = (req, res, next) => {
-  // Query the database to retrieve all teacher records
-  Teacher.findAll()
+  Teacher.findAll({
+    attributes: {
+      include: [
+        [
+          Sequelize.literal(
+            '(SELECT COUNT(*) FROM CourseDetails WHERE CourseDetails.teacherId = Teacher.id)'
+          ),
+          'courseCount',
+        ],
+      ],
+    },
+  })
     .then((teachers) => {
-      // Send success response with the retrieved teacher records
-      res.status(200).json({ teachers: teachers });
+      res.status(200).json({ teachers });
     })
     .catch((err) => {
-      // Handle errors
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
+      if (!err.statusCode) err.statusCode = 500;
       next(err);
     });
+};
+
+// Bulk delete teachers
+exports.bulkDelete = async (req, res, next) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ message: 'ids must be a non-empty array.' });
+  }
+  try {
+    // Run the same cleanup as single delete for each teacher
+    await Promise.all(
+      ids.map(async (teacherId) => {
+        const teacher = await Teacher.findByPk(teacherId);
+        if (!teacher) return; // skip missing ids silently
+        await TeacherStudent.destroy({ where: { TeacherId: teacherId } });
+        await TeacherQualification.destroy({ where: { teacherId } });
+        await Specialization.destroy({ where: { teacherId } });
+        await StudentFeedback.destroy({ where: { teacherId } });
+        await UpcomingClass.destroy({ where: { teacherId } });
+        await MakeUpClass.destroy({ where: { teacherId } });
+        await ClassSession.destroy({ where: { teacherId } });
+        await ClassSchedule.destroy({ where: { teacherId } });
+        await CourseDetails.update({ teacherId: null }, { where: { teacherId } });
+        await UpcomingCourses.update({ teacherId: null }, { where: { teacherId } });
+        await Quiz.update({ teacherId: null }, { where: { teacherId } });
+        await Assignment.update({ teacherId: null }, { where: { teacherId } });
+        await SubmittedAssignment.update({ teacherId: null }, { where: { teacherId } });
+        await teacher.destroy();
+      })
+    );
+    res.status(200).json({ message: `${ids.length} teacher(s) deleted successfully.`, ids });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
 };
 
 // get teacher by Id
