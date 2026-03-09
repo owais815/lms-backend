@@ -7,6 +7,7 @@ const {
   getSessionFeedback,
   getTeacherFeedback,
   getAdminSummary,
+  getStudentFeedback,
 } = require('../controllers/feedback');
 
 // Check if student already submitted feedback for a session
@@ -23,5 +24,8 @@ router.get('/session/:sessionId', isAuth, getSessionFeedback);
 
 // Student submits feedback
 router.post('/session/:sessionId', isAuth, submitFeedback);
+
+// Admin: all feedback submitted by a specific student
+router.get('/student/:studentId', isAuth, getStudentFeedback);
 
 module.exports = router;

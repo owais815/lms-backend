@@ -238,4 +238,27 @@ const getAdminSummary = async (req, res) => {
   }
 };
 
-module.exports = { submitFeedback, checkFeedback, getSessionFeedback, getTeacherFeedback, getAdminSummary };
+// ---------------------------------------------------------------------------
+// GET /api/session-feedback/student/:studentId
+// Admin views all feedback submitted by a specific student
+// ---------------------------------------------------------------------------
+const getStudentFeedback = async (req, res) => {
+  const { studentId } = req.params;
+  try {
+    const feedbacks = await SessionFeedback.findAll({
+      where: { studentId },
+      include: [{
+        model: ClassSession,
+        attributes: ['id', 'title', 'date', 'startTime'],
+        required: false,
+      }],
+      order: [['createdAt', 'DESC']],
+    });
+    const summary = computeAverage(feedbacks);
+    res.json({ feedbacks, summary });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { submitFeedback, checkFeedback, getSessionFeedback, getTeacherFeedback, getAdminSummary, getStudentFeedback };
