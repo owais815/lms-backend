@@ -184,7 +184,7 @@ exports.getTeacherSessions = async (req, res, next) => {
       where: {
         teacherId,
         date: { [Op.between]: [past30.toISOString().split('T')[0], next14.toISOString().split('T')[0]] },
-        status: { [Op.in]: ['scheduled', 'completed', 'makeup'] }
+        status: { [Op.in]: ['scheduled', 'live', 'completed', 'makeup'] }
       },
       include: [
         { model: Courses, attributes: ['id', 'courseName'] }
