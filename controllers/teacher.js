@@ -241,7 +241,7 @@ exports.delete = async (req, res, next) => {
   }
 };
 
-// getAllTeachers — includes courseCount per teacher via subquery
+// getAllTeachers — includes courseCount and todayBookedMinutes per teacher via subqueries
 exports.getAllTeachers = (req, res, next) => {
   Teacher.findAll({
     attributes: {
@@ -251,6 +251,16 @@ exports.getAllTeachers = (req, res, next) => {
             '(SELECT COUNT(*) FROM CourseDetails WHERE CourseDetails.teacherId = Teacher.id)'
           ),
           'courseCount',
+        ],
+        [
+          Sequelize.literal(
+            `(SELECT COALESCE(SUM(TIMESTAMPDIFF(MINUTE, CONCAT(cs.date, ' ', cs.startTime), CONCAT(cs.date, ' ', cs.endTime))), 0)
+              FROM ClassSessions cs
+              WHERE cs.teacherId = Teacher.id
+                AND cs.date = CURDATE()
+                AND cs.status NOT IN ('cancelled'))`
+          ),
+          'todayBookedMinutes',
         ],
       ],
     },
