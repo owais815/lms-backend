@@ -42,8 +42,9 @@ router.post('/login', loginRateLimiter, parentController.login);
 
 // ─── Admin-only routes ───────────────────────────────────────────────────────
 
-router.get('/getAll',      isAuth, checkPermission(PERMISSIONS.PARENTS_VIEW),   parentController.getAllParents);
-router.delete('/:parentId', isAuth, checkPermission(PERMISSIONS.PARENTS_DELETE), parentController.delete);
+router.get('/getAll',                  isAuth, checkPermission(PERMISSIONS.PARENTS_VIEW),   parentController.getAllParents);
+router.patch('/:parentId/toggle-status', isAuth, checkPermission(PERMISSIONS.PARENTS_EDIT), parentController.toggleStatus);
+router.delete('/:parentId',            isAuth, checkPermission(PERMISSIONS.PARENTS_DELETE), parentController.delete);
 
 // ─── Authenticated routes (parent or admin) ──────────────────────────────────
 
