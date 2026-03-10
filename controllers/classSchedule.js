@@ -1073,3 +1073,126 @@ exports.endSession = async (req, res) => {
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+// ---------------------------------------------------------------------------
+// Admin: list ClassSession rows with optional filters (table view)
+// GET /api/class-schedule/sessions-list
+// Query: startDate, endDate, teacherId, courseId, status, shift, sessionStatus
+// ---------------------------------------------------------------------------
+exports.getSessionsList = async (req, res) => {
+  try {
+    const { startDate, endDate, teacherId, courseId, status, shift, sessionStatus } = req.query;
+
+    const where = {};
+
+    if (startDate && endDate) {
+      where.date = { [Op.between]: [startDate, endDate] };
+    } else if (startDate) {
+      where.date = { [Op.gte]: startDate };
+    } else if (endDate) {
+      where.date = { [Op.lte]: endDate };
+    }
+
+    if (teacherId) where.teacherId = teacherId;
+    if (courseId) where.courseId = courseId;
+    if (status) where.status = status;
+    if (shift) where.shift = shift;
+    if (sessionStatus) where.sessionStatus = sessionStatus;
+
+    const sessions = await ClassSession.findAll({
+      where,
+      include: [
+        {
+          model: Teacher,
+          attributes: ['id', 'firstName', 'lastName', 'imageUrl', 'shift'],
+        },
+        {
+          model: Courses,
+          attributes: ['id', 'courseName', 'imageUrl'],
+        },
+        {
+          model: ClassSchedule,
+          as: 'schedule',
+          attributes: ['id', 'recurrenceType', 'daysOfWeek', 'title', 'status'],
+          required: false,
+        },
+      ],
+      order: [
+        ['date', 'ASC'],
+        ['startTime', 'ASC'],
+      ],
+    });
+
+    return res.json({ sessions });
+  } catch (err) {
+    console.error('getSessionsList error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Admin: teacher availability for a given date + time window
+// GET /api/class-schedule/teacher-availability
+// Query: date (YYYY-MM-DD), startTime (HH:MM), endTime (HH:MM)
+// ---------------------------------------------------------------------------
+exports.getTeacherAvailability = async (req, res) => {
+  try {
+    const { date, startTime, endTime } = req.query;
+
+    if (!date || !startTime || !endTime) {
+      return res.status(400).json({ message: 'date, startTime, and endTime are required' });
+    }
+
+    // All teachers
+    const teachers = await Teacher.findAll({
+      attributes: ['id', 'firstName', 'lastName', 'imageUrl', 'shift'],
+      order: [['firstName', 'ASC']],
+    });
+
+    // Sessions on that date that overlap the given time window (not cancelled)
+    // Overlap condition: session.startTime < endTime AND session.endTime > startTime
+    const sessions = await ClassSession.findAll({
+      where: {
+        date,
+        status: { [Op.notIn]: ['cancelled'] },
+        startTime: { [Op.lt]: endTime },
+        endTime: { [Op.gt]: startTime },
+      },
+      include: [
+        { model: Courses, attributes: ['id', 'courseName'] },
+      ],
+      attributes: ['id', 'title', 'startTime', 'endTime', 'teacherId', 'status', 'sessionStatus', 'courseId'],
+    });
+
+    // Group sessions by teacherId
+    const sessionsByTeacher = {};
+    for (const s of sessions) {
+      const tid = s.teacherId;
+      if (!sessionsByTeacher[tid]) sessionsByTeacher[tid] = [];
+      sessionsByTeacher[tid].push(s.toJSON());
+    }
+
+    const result = teachers.map((t) => {
+      const tj = t.toJSON();
+      const teacherSessions = sessionsByTeacher[t.id] || [];
+      return {
+        ...tj,
+        isBusy: teacherSessions.length > 0,
+        sessions: teacherSessions,
+      };
+    });
+
+    return res.json({
+      teachers: result,
+      queryDate: date,
+      startTime,
+      endTime,
+      totalTeachers: result.length,
+      freeCount: result.filter((t) => !t.isBusy).length,
+      busyCount: result.filter((t) => t.isBusy).length,
+    });
+  } catch (err) {
+    console.error('getTeacherAvailability error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
