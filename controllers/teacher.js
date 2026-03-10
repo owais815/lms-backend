@@ -262,6 +262,18 @@ exports.getAllTeachers = (req, res, next) => {
           ),
           'todayBookedMinutes',
         ],
+        [
+          Sequelize.literal(
+            '(SELECT COUNT(DISTINCT studentId) FROM CourseDetails WHERE CourseDetails.teacherId = Teacher.id AND CourseDetails.studentId IS NOT NULL)'
+          ),
+          'studentCount',
+        ],
+        [
+          Sequelize.literal(
+            "(SELECT status FROM Salaries WHERE Salaries.teacherId = Teacher.id AND Salaries.month = DATE_FORMAT(NOW(), '%Y-%m-01') LIMIT 1)"
+          ),
+          'currentMonthSalaryStatus',
+        ],
       ],
     },
   })
