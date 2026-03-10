@@ -45,6 +45,11 @@ const Parent = sequelize.define('Parent', {
         type: Sequelize.STRING,
         allowNull: true
     },
+    isActive: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+    },
 });
 // One parent → many students (parentId lives on Student table)
 Parent.hasMany(Student, { foreignKey: 'parentId', as: 'students' });
