@@ -33,8 +33,14 @@ const SessionFeedback = require("./SessionFeedback");
 const Fee = require("./Fee");
 const Certificate = require("./Certificate");
 const Parent = require("./Parent");
+const Salary = require("./Salary");
 
 // Setup associations
+// Salary associations
+Teacher.hasMany(Salary, { foreignKey: 'teacherId' });
+Salary.belongsTo(Teacher, { foreignKey: 'teacherId' });
+
+
 Teacher.belongsToMany(Student, {
   through: TeacherStudent,
   onDelete: "CASCADE",
@@ -233,4 +239,5 @@ module.exports = {
   SessionFeedback,
   Certificate,
   Parent,
+  Salary,
 };
