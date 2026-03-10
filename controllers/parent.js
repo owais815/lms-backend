@@ -229,6 +229,28 @@ exports.getProfileImage = async (req, res, next) => {
 exports.getAllParents = async (req, res, next) => {
   try {
     const parents = await Parent.findAll({
+      attributes: {
+        include: [
+          [
+            Sequelize.literal(
+              '(SELECT COUNT(*) FROM Students WHERE Students.parentId = Parent.id)'
+            ),
+            'childCount',
+          ],
+          [
+            Sequelize.literal(
+              `(SELECT COUNT(*) FROM Fees f INNER JOIN Students s ON s.id = f.studentId WHERE s.parentId = Parent.id AND f.status = 'paid')`
+            ),
+            'paidFeesCount',
+          ],
+          [
+            Sequelize.literal(
+              `(SELECT COUNT(*) FROM Fees f INNER JOIN Students s ON s.id = f.studentId WHERE s.parentId = Parent.id AND f.status IN ('pending','overdue'))`
+            ),
+            'unpaidFeesCount',
+          ],
+        ],
+      },
       include: [{
         model: Student,
         as: 'students',
@@ -236,6 +258,22 @@ exports.getAllParents = async (req, res, next) => {
       }],
     });
     res.status(200).json({ parents });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};
+
+exports.toggleStatus = async (req, res, next) => {
+  try {
+    const parent = await Parent.findByPk(req.params.parentId);
+    if (!parent) {
+      const err = new Error('Parent not found.');
+      err.statusCode = 404;
+      return next(err);
+    }
+    await parent.update({ isActive: !parent.isActive });
+    res.status(200).json({ isActive: parent.isActive });
   } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
     next(err);
