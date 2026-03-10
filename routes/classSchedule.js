@@ -14,6 +14,12 @@ router.post('/propose', isAuth, ctrl.proposeSession);
 // All roles: unified calendar events feed
 router.get('/events', isAuth, ctrl.getCalendarEvents);
 
+// Admin: list ClassSession rows for table view (synced with calendar)
+router.get('/sessions-list', isAuth, checkPermission(PERMISSIONS.SCHEDULE_VIEW), ctrl.getSessionsList);
+
+// Admin: teacher availability for a given date+time window
+router.get('/teacher-availability', isAuth, checkPermission(PERMISSIONS.SCHEDULE_VIEW), ctrl.getTeacherAvailability);
+
 // Admin: get all schedules
 router.get('/admin/all', isAuth, checkPermission(PERMISSIONS.SCHEDULE_VIEW), ctrl.getAllSchedules);
 
