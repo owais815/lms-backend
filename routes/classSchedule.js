@@ -34,6 +34,9 @@ router.get('/student/:studentId', isAuth, ctrl.getStudentSchedules);
 
 // Specific sub-resource routes MUST come before wildcard /:id routes
 
+// Admin: edit safe fields of a single session (scheduled+idle only)
+router.put('/sessions/:sessionId', isAuth, checkPermission(PERMISSIONS.SCHEDULE_MANAGE), ctrl.updateSession);
+
 // Admin/Teacher: cancel a single session
 router.put('/sessions/:sessionId/cancel', isAuth, ctrl.cancelSession);
 
