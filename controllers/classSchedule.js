@@ -1087,7 +1087,7 @@ exports.endSession = async (req, res) => {
 exports.updateSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { title, date, startTime, endTime, notes, shift, meetingLink } = req.body;
+    const { title, date, startTime, endTime, notes, shift, meetingLink, teacherId } = req.body;
 
     const session = await ClassSession.findByPk(sessionId);
     if (!session) return res.status(404).json({ message: 'Session not found' });
@@ -1099,6 +1099,15 @@ exports.updateSession = async (req, res) => {
       return res.status(400).json({ message: 'Cannot edit a live or ended session' });
     }
 
+    // Resolve teacher reassignment
+    const oldTeacherId = session.teacherId;
+    const isTeacherChanging = teacherId !== undefined && Number(teacherId) !== Number(oldTeacherId);
+
+    if (isTeacherChanging) {
+      const newTeacher = await Teacher.findByPk(teacherId, { attributes: ['id', 'firstName', 'lastName'] });
+      if (!newTeacher) return res.status(404).json({ message: 'New teacher not found' });
+    }
+
     const updates = {};
     if (title !== undefined) updates.title = title;
     if (date !== undefined) updates.date = date;
@@ -1107,36 +1116,93 @@ exports.updateSession = async (req, res) => {
     if (notes !== undefined) updates.notes = notes;
     if (shift !== undefined) updates.shift = shift;
     if (meetingLink !== undefined) updates.meetingLink = meetingLink;
+    if (isTeacherChanging) updates.teacherId = Number(teacherId);
 
     await session.update(updates);
 
-    // Notify teacher + enrolled students + parents about the change
+    // -----------------------------------------------------------------------
+    // Notifications
+    // -----------------------------------------------------------------------
     try {
-      const changedFields = Object.keys(updates).join(', ');
-      const updateMsg = `The class "${session.title}" on ${session.date} has been updated (${changedFields} changed). Please check the schedule.`;
+      const sessionLabel = `"${session.title}" on ${session.date}`;
 
-      await notify({ userId: session.teacherId, userType: 'TEACHER', title: 'Class Updated', message: updateMsg });
-
-      if (session.courseId && session.teacherId) {
-        const enrolledStudents = await CourseDetails.findAll({
-          where: { courseId: session.courseId, teacherId: session.teacherId },
-          include: [{ model: Student, attributes: ['id', 'parentId'] }],
+      if (isTeacherChanging) {
+        // 1. Notify old teacher — removed from session
+        await notify({
+          userId: oldTeacherId,
+          userType: 'TEACHER',
+          title: 'Removed from Session',
+          message: `You have been unassigned from the class ${sessionLabel}. Please check with the admin for details.`,
         });
-        await Promise.all(
-          enrolledStudents.map(async (cd) => {
-            if (!cd.Student) return;
-            await notify({ userId: cd.Student.id, userType: 'STUDENT', title: 'Class Updated', message: updateMsg });
-            if (cd.Student.parentId) {
-              await notify({ userId: cd.Student.parentId, userType: 'PARENT', title: 'Class Updated', message: updateMsg });
-            }
-          })
-        );
+
+        // 2. Notify new teacher — assigned to session
+        await notify({
+          userId: Number(teacherId),
+          userType: 'TEACHER',
+          title: 'Assigned to Session',
+          message: `You have been assigned to teach the class ${sessionLabel}. Please check your schedule.`,
+        });
+
+        // 3. Notify old teacher's students + parents — their teacher changed
+        if (session.courseId) {
+          const oldEnrollments = await CourseDetails.findAll({
+            where: { courseId: session.courseId, teacherId: oldTeacherId },
+            include: [{ model: Student, attributes: ['id', 'parentId'] }],
+          });
+          await Promise.all(
+            oldEnrollments.map(async (cd) => {
+              if (!cd.Student) return;
+              await notify({
+                userId: cd.Student.id,
+                userType: 'STUDENT',
+                title: 'Session Teacher Changed',
+                message: `The teacher for your class ${sessionLabel} has been changed. Please check your schedule.`,
+              });
+              if (cd.Student.parentId) {
+                await notify({
+                  userId: cd.Student.parentId,
+                  userType: 'PARENT',
+                  title: 'Session Teacher Changed',
+                  message: `The teacher for your child's class ${sessionLabel} has been changed.`,
+                });
+              }
+            })
+          );
+        }
+      } else {
+        // Regular update — notify the (unchanged) teacher
+        const changedFields = Object.keys(updates).join(', ');
+        const updateMsg = `The class ${sessionLabel} has been updated (${changedFields} changed). Please check the schedule.`;
+        await notify({ userId: oldTeacherId, userType: 'TEACHER', title: 'Class Updated', message: updateMsg });
+
+        // Notify students + parents of unchanged teacher
+        if (session.courseId && oldTeacherId) {
+          const enrolledStudents = await CourseDetails.findAll({
+            where: { courseId: session.courseId, teacherId: oldTeacherId },
+            include: [{ model: Student, attributes: ['id', 'parentId'] }],
+          });
+          await Promise.all(
+            enrolledStudents.map(async (cd) => {
+              if (!cd.Student) return;
+              await notify({ userId: cd.Student.id, userType: 'STUDENT', title: 'Class Updated', message: updateMsg });
+              if (cd.Student.parentId) {
+                await notify({ userId: cd.Student.parentId, userType: 'PARENT', title: 'Class Updated', message: updateMsg });
+              }
+            })
+          );
+        }
       }
     } catch (notifErr) {
       console.error('Notification error (non-fatal):', notifErr.message);
     }
 
-    return res.json({ message: 'Session updated', session });
+    return res.json({
+      message: isTeacherChanging
+        ? 'Session updated. Old teacher unassigned, new teacher assigned. Students notified.'
+        : 'Session updated',
+      session,
+      teacherReassigned: isTeacherChanging,
+    });
   } catch (err) {
     console.error('updateSession error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
@@ -1192,24 +1258,23 @@ exports.getSessionsList = async (req, res) => {
       ],
     });
 
-    // Attach enrolled students for each session via CourseDetails (courseId + teacherId)
-    const pairs = [...new Set(sessions.map((s) => `${s.courseId}-${s.teacherId}`))];
+    // Attach enrolled students for each session via CourseDetails (by courseId only).
+    // We intentionally do NOT filter by teacherId here so that students remain visible
+    // even after a teacher is reassigned — the enrollment (CourseDetails) still points
+    // to the original teacher, but the session's teacherId has changed.
+    const courseIds = [...new Set(sessions.map((s) => s.courseId))];
     let studentMap = {};
-    if (pairs.length > 0) {
-      const pairConditions = pairs.map((p) => {
-        const [cId, tId] = p.split('-');
-        return { courseId: Number(cId), teacherId: Number(tId) };
-      });
+    if (courseIds.length > 0) {
       const enrollments = await CourseDetails.findAll({
-        where: { [Op.or]: pairConditions },
+        where: { courseId: courseIds },
         include: [{ model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] }],
-        attributes: ['id', 'courseId', 'teacherId'],
+        attributes: ['id', 'courseId'],
       });
       enrollments.forEach((cd) => {
         if (!cd.Student) return;
-        const key = `${cd.courseId}-${cd.teacherId}`;
+        const key = String(cd.courseId);
         if (!studentMap[key]) studentMap[key] = [];
-        // Avoid duplicate student entries (same student can have multiple CourseDetails rows)
+        // Deduplicate — same student may have multiple CourseDetails rows
         if (!studentMap[key].find((s) => s.id === cd.Student.id)) {
           studentMap[key].push(cd.Student);
         }
@@ -1218,7 +1283,7 @@ exports.getSessionsList = async (req, res) => {
 
     const result = sessions.map((s) => ({
       ...s.toJSON(),
-      students: studentMap[`${s.courseId}-${s.teacherId}`] || [],
+      students: studentMap[String(s.courseId)] || [],
     }));
 
     return res.json({ sessions: result });
