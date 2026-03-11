@@ -7,6 +7,7 @@ const Student = require('../models/Student');
 const Quiz = require('../models/Quiz/Quiz');
 const Assignment = require('../models/Assignment/Assignment');
 const CourseDetails = require('../models/CourseDetails');
+const Parent = require('../models/Parent');
 const Admin = require('../models/Admin');
 const callingAppService = require('../services/callingAppService');
 const socket = require('../socket');
@@ -338,22 +339,26 @@ exports.cancelSession = async (req, res) => {
       }
     }
 
-    // Notify enrolled students of cancellation
+    // Notify teacher + enrolled students + parents of cancellation
     try {
+      const cancelMsg = `The class "${session.title}" on ${session.date} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`;
+
+      // Notify the assigned teacher
+      await notify({ userId: session.teacherId, userType: 'TEACHER', title: 'Class Cancelled', message: cancelMsg });
+
       if (session.courseId && session.teacherId) {
         const enrolledStudents = await CourseDetails.findAll({
           where: { courseId: session.courseId, teacherId: session.teacherId },
-          attributes: ['studentId'],
+          include: [{ model: Student, attributes: ['id', 'parentId'] }],
         });
         await Promise.all(
-          enrolledStudents.map((cd) =>
-            notify({
-              userId: cd.studentId,
-              userType: 'student',
-              title: 'Class Cancelled',
-              message: `The class "${session.title}" on ${session.date} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`,
-            })
-          )
+          enrolledStudents.map(async (cd) => {
+            if (!cd.Student) return;
+            await notify({ userId: cd.Student.id, userType: 'STUDENT', title: 'Class Cancelled', message: cancelMsg });
+            if (cd.Student.parentId) {
+              await notify({ userId: cd.Student.parentId, userType: 'PARENT', title: 'Class Cancelled', message: cancelMsg });
+            }
+          })
         );
       }
     } catch (notifErr) {
@@ -1075,6 +1080,70 @@ exports.endSession = async (req, res) => {
 };
 
 // ---------------------------------------------------------------------------
+// Admin: edit safe fields of a single session
+// PUT /api/class-schedule/sessions/:sessionId
+// Allowed only when status=scheduled AND sessionStatus=idle
+// ---------------------------------------------------------------------------
+exports.updateSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { title, date, startTime, endTime, notes, shift, meetingLink } = req.body;
+
+    const session = await ClassSession.findByPk(sessionId);
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+
+    if (session.status !== 'scheduled') {
+      return res.status(400).json({ message: 'Only scheduled sessions can be edited' });
+    }
+    if (session.sessionStatus !== 'idle') {
+      return res.status(400).json({ message: 'Cannot edit a live or ended session' });
+    }
+
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (date !== undefined) updates.date = date;
+    if (startTime !== undefined) updates.startTime = startTime;
+    if (endTime !== undefined) updates.endTime = endTime;
+    if (notes !== undefined) updates.notes = notes;
+    if (shift !== undefined) updates.shift = shift;
+    if (meetingLink !== undefined) updates.meetingLink = meetingLink;
+
+    await session.update(updates);
+
+    // Notify teacher + enrolled students + parents about the change
+    try {
+      const changedFields = Object.keys(updates).join(', ');
+      const updateMsg = `The class "${session.title}" on ${session.date} has been updated (${changedFields} changed). Please check the schedule.`;
+
+      await notify({ userId: session.teacherId, userType: 'TEACHER', title: 'Class Updated', message: updateMsg });
+
+      if (session.courseId && session.teacherId) {
+        const enrolledStudents = await CourseDetails.findAll({
+          where: { courseId: session.courseId, teacherId: session.teacherId },
+          include: [{ model: Student, attributes: ['id', 'parentId'] }],
+        });
+        await Promise.all(
+          enrolledStudents.map(async (cd) => {
+            if (!cd.Student) return;
+            await notify({ userId: cd.Student.id, userType: 'STUDENT', title: 'Class Updated', message: updateMsg });
+            if (cd.Student.parentId) {
+              await notify({ userId: cd.Student.parentId, userType: 'PARENT', title: 'Class Updated', message: updateMsg });
+            }
+          })
+        );
+      }
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
+    }
+
+    return res.json({ message: 'Session updated', session });
+  } catch (err) {
+    console.error('updateSession error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Admin: list ClassSession rows with optional filters (table view)
 // GET /api/class-schedule/sessions-list
 // Query: startDate, endDate, teacherId, courseId, status, shift, sessionStatus
@@ -1123,7 +1192,36 @@ exports.getSessionsList = async (req, res) => {
       ],
     });
 
-    return res.json({ sessions });
+    // Attach enrolled students for each session via CourseDetails (courseId + teacherId)
+    const pairs = [...new Set(sessions.map((s) => `${s.courseId}-${s.teacherId}`))];
+    let studentMap = {};
+    if (pairs.length > 0) {
+      const pairConditions = pairs.map((p) => {
+        const [cId, tId] = p.split('-');
+        return { courseId: Number(cId), teacherId: Number(tId) };
+      });
+      const enrollments = await CourseDetails.findAll({
+        where: { [Op.or]: pairConditions },
+        include: [{ model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] }],
+        attributes: ['id', 'courseId', 'teacherId'],
+      });
+      enrollments.forEach((cd) => {
+        if (!cd.Student) return;
+        const key = `${cd.courseId}-${cd.teacherId}`;
+        if (!studentMap[key]) studentMap[key] = [];
+        // Avoid duplicate student entries (same student can have multiple CourseDetails rows)
+        if (!studentMap[key].find((s) => s.id === cd.Student.id)) {
+          studentMap[key].push(cd.Student);
+        }
+      });
+    }
+
+    const result = sessions.map((s) => ({
+      ...s.toJSON(),
+      students: studentMap[`${s.courseId}-${s.teacherId}`] || [],
+    }));
+
+    return res.json({ sessions: result });
   } catch (err) {
     console.error('getSessionsList error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
