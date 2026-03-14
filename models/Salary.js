@@ -21,13 +21,21 @@ const Salary = sequelize.define('Salary', {
     type: DataTypes.DATEONLY, // stored as first day of month e.g. 2026-03-01
     allowNull: false,
   },
+  dueDate: {
+    type: DataTypes.DATEONLY, // deadline by which salary must be paid
+    allowNull: true,
+  },
   status: {
-    type: DataTypes.ENUM('paid', 'unpaid', 'partial'),
+    type: DataTypes.ENUM('paid', 'unpaid', 'partial', 'overdue'),
     allowNull: false,
     defaultValue: 'unpaid',
   },
   paidDate: {
     type: DataTypes.DATEONLY,
+    allowNull: true,
+  },
+  proofPath: {
+    type: DataTypes.STRING(500),
     allowNull: true,
   },
   notes: {
