@@ -42,6 +42,7 @@ const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
 const { startOverdueFeesCron } = require('./Schedular/markOverdueFees');
 const { startAutoEndSessionsCron } = require('./Schedular/autoEndSessions');
+const { startOverdueSalariesCron } = require('./Schedular/markOverdueSalaries');
 const isAuth = require('./middleware/is-auth');
 
 // Choose the environment
@@ -240,6 +241,9 @@ async function patchEnumColumns() {
     `ALTER TABLE ClassSessions ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
     `ALTER TABLE ClassSessions ADD COLUMN sessionStatus ENUM('idle','live','ended') NOT NULL DEFAULT 'idle'`,
     `ALTER TABLE Certificates ADD COLUMN status ENUM('upcoming','issued','revoked') NOT NULL DEFAULT 'issued'`,
+    `ALTER TABLE Salaries ADD COLUMN dueDate DATE DEFAULT NULL`,
+    `ALTER TABLE Salaries ADD COLUMN proofPath VARCHAR(500) DEFAULT NULL`,
+    `ALTER TABLE Salaries MODIFY COLUMN status ENUM('paid','unpaid','partial','overdue') NOT NULL DEFAULT 'unpaid'`,
   ];
   for (const sql of patches) {
     try {
@@ -269,6 +273,7 @@ sequelize
     startMessageCleanup(io);
     startOverdueFeesCron();
     startAutoEndSessionsCron();
+    startOverdueSalariesCron();
 
     console.log(`[app] Server started in ${env} mode.`);
   })
