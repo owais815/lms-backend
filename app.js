@@ -74,6 +74,7 @@ require("./models/association");
 const allowedOrigins = [
   process.env.CORS_ORIGIN_DEV,
   process.env.CORS_ORIGIN_PROD,
+  process.env.CALLING_APP_URL || 'https://localhost:3010',
 ].filter(Boolean);
 
 app.use(cors({

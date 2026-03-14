@@ -926,7 +926,20 @@ exports.joinSession = async (req, res) => {
       userName = 'Admin';
     }
 
-    const joinUrl = await callingAppService.createJoinUrl(session.roomId, userName, isPresenter);
+    // Extract the raw JWT to pass to the calling app so it can call LMS APIs directly
+    const authHeader = req.get('Authorization') || '';
+    const lmsToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+    const lmsApiUrl = process.env.LMS_API_URL || 'http://localhost:8080';
+
+    const lmsParams = {
+      lmsSessionId: String(session.id),
+      lmsCourseId: session.courseDetailsId ? String(session.courseDetailsId) : '',
+      lmsToken,
+      lmsApiUrl,
+      lmsUserRole: role,
+    };
+
+    const joinUrl = await callingAppService.createJoinUrl(session.roomId, userName, isPresenter, false, false, lmsParams);
 
     return res.json({ joinUrl, roomId: session.roomId });
   } catch (err) {

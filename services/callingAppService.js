@@ -57,7 +57,7 @@ async function callingAppRequest(path, method = 'GET', body = null) {
  * @param {boolean} isPresenter - true = teacher/admin
  * @returns {Promise<string>}   - The full join URL to load in the iframe
  */
-async function createJoinUrl(roomId, userName, isPresenter, audio = false, video = false) {
+async function createJoinUrl(roomId, userName, isPresenter, audio = false, video = false, lmsParams = {}) {
   // Append a short random suffix so each join attempt has a unique peer_name.
   // MiroTalk blocks entry if another peer with the exact same name is already in the room
   // (e.g. on iframe refresh or duplicate names). The suffix keeps display names readable
@@ -81,6 +81,7 @@ async function createJoinUrl(roomId, userName, isPresenter, audio = false, video
     hide: 'false',
     notify: 'false',
     isPresenter: String(isPresenter),
+    ...lmsParams,
   });
 
   return `${CALLING_APP_URL}/join?${params.toString()}`;
