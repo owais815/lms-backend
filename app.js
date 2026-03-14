@@ -36,6 +36,7 @@ const sessionFeedbackRoutes = require("./routes/feedback");
 const feesRoutes = require("./routes/fees");
 const faqRoutes = require("./routes/faq");
 const certificateRoutes = require("./routes/certificate");
+const salaryRoutes = require("./routes/salary");
 
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
@@ -187,6 +188,7 @@ app.use("/api/session-feedback", sessionFeedbackRoutes);
 app.use("/api/fees", feesRoutes);
 app.use("/api/faq", faqRoutes);
 app.use("/api/certificates", certificateRoutes);
+app.use("/api/salary", salaryRoutes);
 
 // ── Global error handler ─────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
