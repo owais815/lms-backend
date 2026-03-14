@@ -442,7 +442,20 @@ exports.addCourse =async (req,res,next)=>{
 }
 exports.getAllCourses = async (req, res, next) => {
     try {
-        const courses = await Courses.findAll();
+        const courses = await Courses.findAll({
+            attributes: {
+                include: [
+                    [
+                        Sequelize.literal('(SELECT COUNT(DISTINCT teacherId) FROM CourseDetails WHERE CourseDetails.courseId = Course.id AND CourseDetails.teacherId IS NOT NULL)'),
+                        'teacherCount'
+                    ],
+                    [
+                        Sequelize.literal('(SELECT COUNT(DISTINCT studentId) FROM CourseDetails WHERE CourseDetails.courseId = Course.id AND CourseDetails.studentId IS NOT NULL)'),
+                        'studentCount'
+                    ],
+                ]
+            }
+        });
         if (!courses || courses.length === 0) {
             return res.status(200).json({ courses: [], message: 'No courses found.' });
         }
