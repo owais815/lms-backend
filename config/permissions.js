@@ -79,6 +79,10 @@ const PERMISSIONS = {
   // Certificates
   CERTIFICATES_VIEW:   'certificates:view',
   CERTIFICATES_MANAGE: 'certificates:manage',
+
+  // Salary Management
+  SALARY_VIEW:   'salary:view',
+  SALARY_MANAGE: 'salary:manage',
 };
 
 // Roles that bypass all permission checks
