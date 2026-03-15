@@ -42,6 +42,12 @@ const Salary = sequelize.define('Salary', {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  createdById: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: { model: 'Admins', key: 'id' },
+    onDelete: 'SET NULL',
+  },
 }, {
   tableName: 'Salaries',
 });
