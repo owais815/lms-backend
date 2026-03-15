@@ -34,11 +34,14 @@ const Fee = require("./Fee");
 const Certificate = require("./Certificate");
 const Parent = require("./Parent");
 const Salary = require("./Salary");
+const Admin = require("./Admin");
 
 // Setup associations
 // Salary associations
 Teacher.hasMany(Salary, { foreignKey: 'teacherId' });
 Salary.belongsTo(Teacher, { foreignKey: 'teacherId' });
+Salary.belongsTo(Admin, { foreignKey: 'createdById', as: 'CreatedBy' });
+Admin.hasMany(Salary, { foreignKey: 'createdById', as: 'CreatedSalaries' });
 
 
 Teacher.belongsToMany(Student, {
