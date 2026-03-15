@@ -52,6 +52,12 @@ const Fee = sequelize.define('Fee', {
         type: Sequelize.INTEGER,
         allowNull: true,
     },
+    createdById: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        references: { model: 'Admins', key: 'id' },
+        onDelete: 'SET NULL',
+    },
 });
 
 module.exports = Fee;
