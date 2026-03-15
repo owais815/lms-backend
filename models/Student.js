@@ -99,6 +99,15 @@ const Student = sequelize.define('Student', {
         allowNull: true,
         defaultValue: null
     },
+    studentLabel: {
+        type: Sequelize.ENUM('Unassigned', 'Trial', 'New Enrollment', 'Lost', 'Struck off'),
+        allowNull: true,
+        defaultValue: null
+    },
+    struckOffReason: {
+        type: Sequelize.STRING,
+        allowNull: true
+    },
     enrollmentChannel: {
         type: Sequelize.ENUM('Meta', 'Google', 'TikTok', 'SEO', 'Email', 'Reference'),
         allowNull: true,

@@ -244,6 +244,8 @@ async function patchEnumColumns() {
     `ALTER TABLE Salaries ADD COLUMN dueDate DATE DEFAULT NULL`,
     `ALTER TABLE Salaries ADD COLUMN proofPath VARCHAR(500) DEFAULT NULL`,
     `ALTER TABLE Salaries MODIFY COLUMN status ENUM('paid','unpaid','partial','overdue') NOT NULL DEFAULT 'unpaid'`,
+    `ALTER TABLE Students ADD COLUMN studentLabel ENUM('Unassigned','Trial','New Enrollment','Lost','Struck off') DEFAULT NULL`,
+    `ALTER TABLE Students ADD COLUMN struckOffReason VARCHAR(500) DEFAULT NULL`,
     `ALTER TABLE Students ADD COLUMN enrollmentChannel ENUM('Meta','Google','TikTok','SEO','Email','Reference') DEFAULT NULL`,
     `ALTER TABLE Students ADD COLUMN referenceDetails VARCHAR(500) DEFAULT NULL`,
   ];
