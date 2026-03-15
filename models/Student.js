@@ -99,6 +99,15 @@ const Student = sequelize.define('Student', {
         allowNull: true,
         defaultValue: null
     },
+    enrollmentChannel: {
+        type: Sequelize.ENUM('Meta', 'Google', 'TikTok', 'SEO', 'Email', 'Reference'),
+        allowNull: true,
+        defaultValue: null
+    },
+    referenceDetails: {
+        type: Sequelize.STRING,
+        allowNull: true
+    },
     // FK to Parent — one parent can have many students
     parentId: {
         type: Sequelize.INTEGER,
