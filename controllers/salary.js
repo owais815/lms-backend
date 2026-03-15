@@ -3,10 +3,14 @@ const fs = require('fs');
 const { Op } = require('sequelize');
 const Salary = require('../models/Salary');
 const Teacher = require('../models/Teacher');
+const Admin = require('../models/Admin');
 
 const salaryWithRelations = (id) =>
     Salary.findByPk(id, {
-        include: [{ model: Teacher, attributes: ['id', 'firstName', 'lastName', 'email'] }],
+        include: [
+            { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'email'] },
+            { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
+        ],
     });
 
 // GET /api/salary — all salaries (filterable by ?teacherId=&status=&month=)
@@ -19,7 +23,10 @@ exports.getAllSalaries = async (req, res) => {
 
         const salaries = await Salary.findAll({
             where,
-            include: [{ model: Teacher, attributes: ['id', 'firstName', 'lastName', 'email'] }],
+            include: [
+                { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'email'] },
+                { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
+            ],
             order: [['month', 'DESC'], ['createdAt', 'DESC']],
         });
         res.json({ salaries });
@@ -54,6 +61,7 @@ exports.createSalary = async (req, res) => {
             status:  status || 'unpaid',
             paidDate: paidDate || null,
             notes:   notes   || null,
+            createdById: req.userId || null,
         });
 
         const result = await salaryWithRelations(salary.id);
