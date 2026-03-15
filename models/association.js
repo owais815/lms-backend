@@ -173,9 +173,11 @@ Payment.belongsTo(Student, { foreignKey: 'studentId' });
 Fee.belongsTo(Student, { foreignKey: 'studentId' });
 Fee.belongsTo(Plan, { foreignKey: 'planId' });
 Fee.belongsTo(PlanChangeRequest, { foreignKey: 'planChangeRequestId', as: 'planChangeRequest' });
+Fee.belongsTo(Admin, { foreignKey: 'createdById', as: 'CreatedBy' });
 Student.hasMany(Fee, { foreignKey: 'studentId' });
 Plan.hasMany(Fee, { foreignKey: 'planId' });
 PlanChangeRequest.hasOne(Fee, { foreignKey: 'planChangeRequestId', as: 'paymentFee' });
+Admin.hasMany(Fee, { foreignKey: 'createdById', as: 'CreatedFees' });
 
 // ClassSchedule associations
 ClassSchedule.belongsTo(Courses, { foreignKey: 'courseId' });
