@@ -5,16 +5,15 @@ const Fee = require('../models/Fee');
 const Student = require('../models/Student');
 const Plan = require('../models/Plan');
 const PlanChangeRequest = require('../models/PlanChangeRequest');
+const Admin = require('../models/Admin');
 
 const feeWithRelations = (id) =>
     Fee.findByPk(id, {
         include: [
             { model: Student, attributes: ['id', 'firstName', 'lastName', 'username'] },
             { model: Plan, attributes: ['id', 'name', 'price', 'billingCycle'] },
-            {
-                model: PlanChangeRequest, as: 'planChangeRequest',
-                attributes: ['id', 'status', 'requestedPlanId', 'studentId'],
-            },
+            { model: PlanChangeRequest, as: 'planChangeRequest', attributes: ['id', 'status', 'requestedPlanId', 'studentId'] },
+            { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
         ],
     });
 
@@ -30,10 +29,8 @@ exports.getAllFees = async (req, res) => {
             include: [
                 { model: Student, attributes: ['id', 'firstName', 'lastName', 'username'] },
                 { model: Plan, attributes: ['id', 'name', 'price', 'billingCycle'] },
-                {
-                    model: PlanChangeRequest, as: 'planChangeRequest',
-                    attributes: ['id', 'status', 'requestedPlanId'],
-                },
+                { model: PlanChangeRequest, as: 'planChangeRequest', attributes: ['id', 'status', 'requestedPlanId'] },
+                { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
             ],
             order: [['createdAt', 'DESC']],
         });
@@ -70,6 +67,7 @@ exports.createFee = async (req, res) => {
             amount,
             dueDate,
             notes: notes || null,
+            createdById: req.userId || null,
         });
         const full = await feeWithRelations(fee.id);
         res.status(201).json({ fee: full });
