@@ -66,6 +66,8 @@ exports.signup = async (req, res, next) => {
     teacherId,
     courseId,
     shift,
+    enrollmentChannel,
+    referenceDetails,
   } = req.body;
 
   const t = await sequelize.transaction();
@@ -98,6 +100,8 @@ exports.signup = async (req, res, next) => {
       suitableHours,
       nameForTeacher,
       shift: shift || null,
+      enrollmentChannel: enrollmentChannel || null,
+      referenceDetails: enrollmentChannel === 'Reference' ? (referenceDetails || null) : null,
     }, { transaction: t });
 
     // Step 4: Assign teacher if provided (TeacherStudent M2M)
@@ -287,6 +291,8 @@ exports.update = async (req, res, next) => {
     courseId,
     planId,
     shift,
+    enrollmentChannel,
+    referenceDetails,
   } = req.body;
 
   let updateFields = {};
@@ -359,6 +365,20 @@ exports.update = async (req, res, next) => {
   }
   if (shift !== undefined) {
     updateFields.shift = shift || null;
+  }
+  if (enrollmentChannel !== undefined) {
+    updateFields.enrollmentChannel = enrollmentChannel || null;
+  }
+  if (enrollmentChannel !== undefined || referenceDetails !== undefined) {
+    // Clear referenceDetails if channel is not Reference
+    const channel = enrollmentChannel !== undefined ? enrollmentChannel : null;
+    if (channel === 'Reference') {
+      updateFields.referenceDetails = referenceDetails || null;
+    } else if (channel !== undefined) {
+      updateFields.referenceDetails = null;
+    } else if (referenceDetails !== undefined) {
+      updateFields.referenceDetails = referenceDetails || null;
+    }
   }
 
   try {
