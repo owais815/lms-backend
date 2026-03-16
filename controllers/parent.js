@@ -18,7 +18,7 @@ exports.signup = async (req, res, next) => {
     return res.status(422).json({ message: "Validation failed.", data: errors.array() });
   }
 
-  const { username, firstName, lastName, password, contact, email, address } = req.body;
+  const { username, firstName, lastName, password, contact, email, address, timeZone } = req.body;
   // Accept studentIds as an array (one parent → many students)
   const studentIds = Array.isArray(req.body.studentIds)
     ? req.body.studentIds
@@ -30,6 +30,7 @@ exports.signup = async (req, res, next) => {
     const hashPwd = await bcrypt.hash(password, 12);
     const parent = await Parent.create({
       username, firstName, lastName, contact, email, password: hashPwd, address,
+      timeZone: timeZone || null,
     });
 
     // Set parentId on each linked student
@@ -85,6 +86,7 @@ exports.login = (req, res, next) => {
           permissions: [],
           isActive: true,
           profileImg: loggedIn.profileImg || null,
+          timeZone: loggedIn.timeZone || null,
         },
       });
     })
@@ -118,7 +120,7 @@ exports.delete = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   const { parentId } = req.params;
-  const { firstName, lastName, contact, address, emergencyContact, studentIds } = req.body;
+  const { firstName, lastName, contact, address, emergencyContact, studentIds, timeZone } = req.body;
 
   // IDOR check: non-admins can only update their own record
   if (req.userType !== 'ADMIN' && req.userType !== 'SUPER_ADMIN') {
@@ -139,6 +141,7 @@ exports.update = async (req, res, next) => {
     if (contact !== undefined) updateFields.contact = contact;
     if (address !== undefined) updateFields.address = address;
     if (emergencyContact !== undefined) updateFields.emergencyContact = emergencyContact;
+    if (timeZone !== undefined) updateFields.timeZone = timeZone || null;
 
     await parent.update(updateFields);
 
