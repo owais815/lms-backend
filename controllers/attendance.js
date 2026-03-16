@@ -5,6 +5,7 @@ const Student = require('../models/Student');
 const CourseDetails = require('../models/CourseDetails');
 const Courses = require('../models/Course');
 const ClassSession = require('../models/ClassSession');
+const ClassSessionStudent = require('../models/ClassSessionStudent');
 const Teacher = require('../models/Teacher');
 
 // ─── Mark single attendance (legacy endpoint, kept for backward compat) ───────
@@ -116,22 +117,27 @@ exports.getSessionAttendanceSheet = async (req, res, next) => {
       return res.status(404).json({ message: 'Session not found' });
     }
 
-    // Get all students enrolled in this course under this teacher
-    const whereClause = {
-      courseId: session.courseId,
-      teacherId: session.teacherId
-    };
-    // If session is for a specific student, only include that student
-    if (session.studentId) {
-      whereClause.studentId = session.studentId;
-    }
-
-    const enrolledDetails = await CourseDetails.findAll({
-      where: whereClause,
-      include: [
-        { model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] }
-      ]
+    // Check if session is assigned to specific students via junction table
+    const assignedRows = await ClassSessionStudent.findAll({
+      where: { sessionId },
+      attributes: ['studentId'],
     });
+
+    let enrolledDetails;
+    if (assignedRows.length > 0) {
+      // Personal session: only show assigned students
+      const assignedStudentIds = assignedRows.map((r) => r.studentId);
+      enrolledDetails = await CourseDetails.findAll({
+        where: { courseId: session.courseId, studentId: assignedStudentIds },
+        include: [{ model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] }],
+      });
+    } else {
+      // Group session: show all students enrolled in this course under this teacher
+      enrolledDetails = await CourseDetails.findAll({
+        where: { courseId: session.courseId, teacherId: session.teacherId },
+        include: [{ model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] }],
+      });
+    }
 
     // Get existing attendance records for this session
     const existingAttendance = await Attendance.findAll({
