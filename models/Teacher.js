@@ -46,6 +46,11 @@ const Teacher = sequelize.define('Teacher', {
         type: Sequelize.BOOLEAN,
         defaultValue: true
     },
+    timeZone: {
+        type: Sequelize.STRING,
+        allowNull: true,
+        defaultValue: null,
+    },
     shift: {
         type: Sequelize.TEXT,
         allowNull: true,
