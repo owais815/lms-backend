@@ -12,6 +12,8 @@ const Assignment = require('../models/Assignment/Assignment');
 const CourseDetails = require('../models/CourseDetails');
 const Parent = require('../models/Parent');
 const Admin = require('../models/Admin');
+const Attendance = require('../models/Attendance');
+const SessionFeedback = require('../models/SessionFeedback');
 const callingAppService = require('../services/callingAppService');
 const socket = require('../socket');
 const notify = require('../utils/notify');
@@ -1387,6 +1389,101 @@ exports.getSessionsList = async (req, res) => {
 // Admin: teacher availability for a given date + time window
 // GET /api/class-schedule/teacher-availability
 // Query: date (YYYY-MM-DD), startTime (HH:MM), endTime (HH:MM)
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// DELETE /api/class-schedule/sessions/:sessionId  — Hard-delete a session
+// Blocks live sessions. Cleans up all child records and notifies affected actors.
+// ---------------------------------------------------------------------------
+exports.deleteSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await ClassSession.findByPk(sessionId, {
+      include: [
+        { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName'] },
+        { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
+        { model: Student, as: 'Students', through: { attributes: [] }, attributes: ['id', 'firstName', 'lastName', 'parentId'] },
+      ],
+    });
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+
+    if (session.sessionStatus === 'live') {
+      return res.status(400).json({ message: 'Cannot delete a live session. End the session first.' });
+    }
+
+    // -----------------------------------------------------------------------
+    // Collect actors to notify before deletion
+    // -----------------------------------------------------------------------
+    const deleteMsg = `The class "${session.title}" on ${session.date} has been permanently deleted by the admin.`;
+
+    // Assigned students via junction table; fall back to all enrolled for group sessions
+    let studentsToNotify = session.Students || [];
+    const parentIds = new Set();
+    if (studentsToNotify.length === 0 && session.courseId) {
+      // Group session — find all enrolled students
+      const enrollments = await CourseDetails.findAll({
+        where: { courseId: session.courseId, teacherId: session.teacherId },
+        include: [{ model: Student, attributes: ['id', 'parentId'] }],
+      });
+      studentsToNotify = enrollments.map((cd) => cd.Student).filter(Boolean);
+    }
+    studentsToNotify.forEach((s) => { if (s.parentId) parentIds.add(s.parentId); });
+
+    // -----------------------------------------------------------------------
+    // Delete all child records in dependency order
+    // -----------------------------------------------------------------------
+
+    // 1. Attendance records tied to this session
+    await Attendance.destroy({ where: { sessionId } });
+
+    // 2. Session feedback submitted by students
+    await SessionFeedback.destroy({ where: { sessionId } });
+
+    // 3. Junction table rows (ClassSessionStudents)
+    await ClassSessionStudent.destroy({ where: { sessionId } });
+
+    // 4. Delete the session itself
+    await session.destroy();
+
+    // -----------------------------------------------------------------------
+    // Notify affected actors (non-fatal)
+    // -----------------------------------------------------------------------
+    try {
+      const notifyPromises = [];
+
+      // Notify teacher
+      if (session.teacherId) {
+        notifyPromises.push(
+          notify({ userId: session.teacherId, userType: 'TEACHER', title: 'Session Deleted', message: deleteMsg })
+        );
+      }
+
+      // Notify each student
+      for (const student of studentsToNotify) {
+        notifyPromises.push(
+          notify({ userId: student.id, userType: 'STUDENT', title: 'Session Deleted', message: deleteMsg })
+        );
+      }
+
+      // Notify parents
+      for (const parentId of parentIds) {
+        notifyPromises.push(
+          notify({ userId: parentId, userType: 'PARENT', title: 'Session Deleted', message: deleteMsg })
+        );
+      }
+
+      await Promise.all(notifyPromises);
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
+    }
+
+    return res.json({ message: 'Session deleted. Teacher, students, and parents notified.' });
+  } catch (err) {
+    console.error('deleteSession error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
 // ---------------------------------------------------------------------------
 exports.getTeacherAvailability = async (req, res) => {
   try {

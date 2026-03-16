@@ -37,6 +37,9 @@ router.get('/student/:studentId', isAuth, ctrl.getStudentSchedules);
 // Admin: edit safe fields of a single session (scheduled+idle only)
 router.put('/sessions/:sessionId', isAuth, checkPermission(PERMISSIONS.SCHEDULE_MANAGE), ctrl.updateSession);
 
+// Admin: hard-delete a single session
+router.delete('/sessions/:sessionId', isAuth, checkPermission(PERMISSIONS.SCHEDULE_MANAGE), ctrl.deleteSession);
+
 // Admin/Teacher: cancel a single session
 router.put('/sessions/:sessionId/cancel', isAuth, ctrl.cancelSession);
 
