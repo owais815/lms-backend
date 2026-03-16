@@ -158,6 +158,7 @@ app.use(
 );
 
 app.use("/api/resources", express.static(path.join(__dirname, "resources")));
+app.use("/resources", express.static(path.join(__dirname, "resources")));
 app.use("/api/auth", authRoutes);
 app.use("/api/teacher", teacherRoutes);
 app.use("/api/student", studentRoutes);
