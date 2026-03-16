@@ -37,6 +37,7 @@ exports.signup = (req, res, next) => {
   const cnic = req.body.cnic;
   const email = req.body.email;
   const shift = req.body.shift; // array of shifts e.g. ['Morning','Evening']
+  const timeZone = req.body.timeZone || null;
 
   bcrypt
     .hash(password, 12)
@@ -49,6 +50,7 @@ exports.signup = (req, res, next) => {
         cnic: cnic,
         email: email,
         password: hashPwd,
+        timeZone: timeZone,
         shift: (() => {
           const VALID_SHIFTS = ['Morning', 'Afternoon', 'Evening'];
           const clean = Array.isArray(shift) ? shift.filter(s => VALID_SHIFTS.includes(s)) : [];
@@ -113,6 +115,7 @@ exports.login = (req, res, next) => {
           isActive: true,
           profileImg: loggedIn.profileImg || null,
           shift: loggedIn.shift || null,
+          timeZone: loggedIn.timeZone || null,
         },
       });
     })
@@ -141,7 +144,7 @@ exports.update = (req, res, next) => {
   const updateFields = {};
 
   // Extract fields that can be updated from the request body
-  const { firstName, lastName, password, contact, cnic, canDirectlyPublish, shift } = req.body;
+  const { firstName, lastName, password, contact, cnic, canDirectlyPublish, shift, timeZone } = req.body;
 
   // Add the update fields to the updateFields object if they are provided
   if (firstName) {
@@ -169,6 +172,9 @@ exports.update = (req, res, next) => {
     const VALID_SHIFTS = ['Morning', 'Afternoon', 'Evening'];
     const cleanShifts = Array.isArray(shift) ? shift.filter(s => VALID_SHIFTS.includes(s)) : [];
     updateFields.shift = cleanShifts.length > 0 ? cleanShifts : null;
+  }
+  if (timeZone !== undefined) {
+    updateFields.timeZone = timeZone || null;
   }
 
   // Find the Teacher record by ID and update the fields
