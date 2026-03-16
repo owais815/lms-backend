@@ -1,4 +1,6 @@
 const { Op } = require('sequelize');
+const moment = require('moment-timezone');
+const PKT = 'Asia/Karachi';
 const ClassSchedule = require('../models/ClassSchedule');
 const ClassSession = require('../models/ClassSession');
 const Courses = require('../models/Course');
@@ -480,7 +482,7 @@ exports.getStudentSchedules = async (req, res) => {
 // ---------------------------------------------------------------------------
 // Helper: format a ClassSession row into a FullCalendar event object
 // ---------------------------------------------------------------------------
-function formatSessionEvent(session, scheduleStatus, teacher, course, student) {
+function formatSessionEvent(session, scheduleStatus, teacher, course, student, userTz = PKT) {
   // Determine effective status for color
   const effectiveStatus = session.status === 'scheduled' && scheduleStatus === 'pending'
     ? 'pending'
@@ -499,11 +501,15 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, student) {
 
   const meetingLink = session.meetingLink || (session.schedule ? session.schedule.meetingLink : null);
 
+  // Convert times from PKT (reference timezone) to user's timezone
+  const startMoment = moment.tz(`${session.date} ${session.startTime}`, 'YYYY-MM-DD HH:mm:ss', PKT).tz(userTz);
+  const endMoment   = moment.tz(`${session.date} ${session.endTime}`,   'YYYY-MM-DD HH:mm:ss', PKT).tz(userTz);
+
   return {
     id: `session-${session.id}`,
     title: session.title,
-    start: `${session.date}T${session.startTime}`,
-    end: `${session.date}T${session.endTime}`,
+    start: startMoment.format('YYYY-MM-DDTHH:mm:ss'),
+    end:   endMoment.format('YYYY-MM-DDTHH:mm:ss'),
     backgroundColor: color,
     borderColor: color,
     classNames: isLive ? ['event-live'] : [],
@@ -586,14 +592,19 @@ function formatAssignmentEvent(assignment, courseName) {
 // ---------------------------------------------------------------------------
 exports.getCalendarEvents = async (req, res) => {
   try {
-    const { userId, role, start, end } = req.query;
+    const { userId, role, start, end, timezone } = req.query;
     if (!userId || !role) {
       return res.status(400).json({ message: 'userId and role are required' });
     }
 
+    // Use PKT as the canonical reference timezone; convert to user's tz when building events
+    const userTz = (timezone && moment.tz.zone(timezone)) ? timezone : PKT;
+
+    // Expand the requested date range by ±1 day so that sessions near midnight
+    // PKT still appear after conversion to a distant timezone (e.g. UTC-12 / UTC+14)
     const dateFilter = {};
-    if (start) dateFilter[Op.gte] = start;
-    if (end) dateFilter[Op.lte] = end;
+    if (start) dateFilter[Op.gte] = moment.tz(start, PKT).subtract(1, 'day').format('YYYY-MM-DD');
+    if (end)   dateFilter[Op.lte] = moment.tz(end,   PKT).add(1, 'day').format('YYYY-MM-DD');
     const sessionWhere = Object.keys(dateFilter).length > 0 ? { date: dateFilter } : {};
 
     const events = [];
@@ -742,7 +753,7 @@ exports.getCalendarEvents = async (req, res) => {
       const teacher = session.Teacher || null;
       const course = session.Course || null;
       const student = session.Student || null;
-      events.push(formatSessionEvent(session, scheduleStatus, teacher, course, student));
+      events.push(formatSessionEvent(session, scheduleStatus, teacher, course, student, userTz));
     }
 
     // -----------------------------------------------------------------------
