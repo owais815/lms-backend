@@ -28,5 +28,6 @@ router.post('/getCourseByStdAndCourseId',                     isAuth, courseCont
 router.get('/getCourseByTeacherId/:teacherId',                isAuth, courseController.getCourseByTeacherId);
 router.get('/getCourses',                                     isAuth, courseController.getCourses);
 router.get('/getUniqueCourses',                               isAuth, courseController.getUniqueCourses);
+router.get('/students-by-course/:courseId',                   isAuth, courseController.getStudentsByCourse);
 
 module.exports = router;
