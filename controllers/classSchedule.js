@@ -113,7 +113,7 @@ exports.createSchedule = async (req, res) => {
     const {
       title, description, recurrenceType, daysOfWeek,
       startTime, endTime, startDate, endDate,
-      meetingLink, courseId, teacherId, studentId, courseDetailsId, shift,
+      meetingLink, courseId, teacherId, studentIds, courseDetailsId, shift,
     } = req.body;
 
     if (!title || !startTime || !endTime || !startDate || !courseId || !teacherId) {
@@ -123,7 +123,7 @@ exports.createSchedule = async (req, res) => {
       return res.status(400).json({ message: 'daysOfWeek required for weekly/biweekly recurrence' });
     }
 
-    const schedule = await ClassSchedule.create({
+    const scheduleBase = {
       title, description,
       recurrenceType: recurrenceType || 'one-time',
       daysOfWeek: daysOfWeek || null,
@@ -133,17 +133,33 @@ exports.createSchedule = async (req, res) => {
       status: 'active',
       createdBy: 'admin',
       courseId, teacherId,
-      studentId: studentId || null,
       courseDetailsId: courseDetailsId || null,
       shift: shift || null,
-    });
+    };
 
-    const sessionCount = await generateSessions(schedule);
+    const selectedStudentIds = Array.isArray(studentIds) && studentIds.length > 0 ? studentIds : [];
+    let totalSessionCount = 0;
+    let lastSchedule;
+
+    if (selectedStudentIds.length > 0) {
+      // Create one schedule + sessions per selected student (personal sessions)
+      for (const sid of selectedStudentIds) {
+        const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: sid });
+        const count = await generateSessions(schedule);
+        totalSessionCount += count;
+        lastSchedule = schedule;
+      }
+    } else {
+      // Group session — visible to all enrolled students in the course
+      const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: null });
+      totalSessionCount = await generateSessions(schedule);
+      lastSchedule = schedule;
+    }
 
     return res.status(201).json({
       message: 'Schedule created successfully',
-      schedule,
-      sessionCount,
+      schedule: lastSchedule,
+      sessionCount: totalSessionCount,
     });
   } catch (err) {
     console.error('createSchedule error:', err);
@@ -158,14 +174,14 @@ exports.proposeSession = async (req, res) => {
   try {
     const {
       title, startTime, endTime, startDate,
-      meetingLink, courseId, teacherId, studentId, courseDetailsId, shift,
+      meetingLink, courseId, teacherId, studentIds, courseDetailsId, shift,
     } = req.body;
 
     if (!title || !startTime || !endTime || !startDate || !courseId || !teacherId) {
       return res.status(400).json({ message: 'title, startTime, endTime, startDate, courseId, teacherId are required' });
     }
 
-    const schedule = await ClassSchedule.create({
+    const scheduleBase = {
       title,
       recurrenceType: 'one-time',
       daysOfWeek: null,
@@ -175,25 +191,34 @@ exports.proposeSession = async (req, res) => {
       status: 'pending',
       createdBy: 'teacher',
       courseId, teacherId,
-      studentId: studentId || null,
       courseDetailsId: courseDetailsId || null,
       shift: shift || null,
-    });
+    };
 
-    // Create a single session — will appear as "pending" for admin
-    const proposedSession = await ClassSession.create({
-      scheduleId: schedule.id,
-      title,
-      date: startDate,
-      startTime, endTime,
-      meetingLink: null,
-      status: 'scheduled',
-      courseId, teacherId,
-      studentId: studentId || null,
-      courseDetailsId: courseDetailsId || null,
-      shift: shift || null,
-    });
-    await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
+    const selectedStudentIds = Array.isArray(studentIds) && studentIds.length > 0 ? studentIds : [];
+    let lastSchedule;
+
+    if (selectedStudentIds.length > 0) {
+      for (const sid of selectedStudentIds) {
+        const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: sid });
+        const proposedSession = await ClassSession.create({
+          scheduleId: schedule.id, title, date: startDate, startTime, endTime,
+          meetingLink: null, status: 'scheduled', courseId, teacherId,
+          studentId: sid, courseDetailsId: courseDetailsId || null, shift: shift || null,
+        });
+        await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
+        lastSchedule = schedule;
+      }
+    } else {
+      const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: null });
+      const proposedSession = await ClassSession.create({
+        scheduleId: schedule.id, title, date: startDate, startTime, endTime,
+        meetingLink: null, status: 'scheduled', courseId, teacherId,
+        studentId: null, courseDetailsId: courseDetailsId || null, shift: shift || null,
+      });
+      await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
+      lastSchedule = schedule;
+    }
 
     // Notify admins of pending proposal
     const admins = await Admin.findAll({ attributes: ['id'] });
@@ -210,7 +235,7 @@ exports.proposeSession = async (req, res) => {
       )
     );
 
-    return res.status(201).json({ message: 'Session proposed — awaiting admin approval', schedule });
+    return res.status(201).json({ message: 'Session proposed — awaiting admin approval', schedule: lastSchedule });
   } catch (err) {
     console.error('proposeSession error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
