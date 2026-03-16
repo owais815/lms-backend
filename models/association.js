@@ -27,6 +27,7 @@ const Payment = require("./Payment");
 const QuestionBank = require("./QuestionBank");
 const ClassSchedule = require("./ClassSchedule");
 const ClassSession = require("./ClassSession");
+const ClassSessionStudent = require("./ClassSessionStudent");
 const CoursePDF = require("./CoursePDF");
 const TeacherAttendance = require("./TeacherAttendance");
 const SessionFeedback = require("./SessionFeedback");
@@ -197,6 +198,12 @@ ClassSession.belongsTo(Teacher, { foreignKey: 'teacherId' });
 ClassSession.belongsTo(Student, { foreignKey: 'studentId' });
 ClassSession.belongsTo(CourseDetails, { foreignKey: 'courseDetailsId' });
 
+// ClassSessionStudent (junction: one session → many students)
+ClassSession.belongsToMany(Student, { through: ClassSessionStudent, foreignKey: 'sessionId', as: 'Students' });
+Student.belongsToMany(ClassSession, { through: ClassSessionStudent, foreignKey: 'studentId', as: 'Sessions' });
+ClassSessionStudent.belongsTo(ClassSession, { foreignKey: 'sessionId' });
+ClassSessionStudent.belongsTo(Student, { foreignKey: 'studentId' });
+
 // SessionFeedback associations
 SessionFeedback.belongsTo(ClassSession, { foreignKey: 'sessionId' });
 SessionFeedback.belongsTo(Student, { foreignKey: 'studentId' });
@@ -239,6 +246,7 @@ module.exports = {
   QuestionBank,
   ClassSchedule,
   ClassSession,
+  ClassSessionStudent,
   CoursePDF,
   TeacherAttendance,
   SessionFeedback,
