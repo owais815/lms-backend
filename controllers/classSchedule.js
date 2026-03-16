@@ -3,6 +3,7 @@ const moment = require('moment-timezone');
 const PKT = 'Asia/Karachi';
 const ClassSchedule = require('../models/ClassSchedule');
 const ClassSession = require('../models/ClassSession');
+const ClassSessionStudent = require('../models/ClassSessionStudent');
 const Courses = require('../models/Course');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
@@ -35,7 +36,9 @@ const EVENT_COLORS = {
 // ---------------------------------------------------------------------------
 // Internal: generate ClassSession rows from a ClassSchedule
 // ---------------------------------------------------------------------------
-async function generateSessions(schedule) {
+// studentIds: number[] — if non-empty, sessions are linked to those students via ClassSessionStudents
+//                        if empty, sessions are group sessions (visible to all enrolled)
+async function generateSessions(schedule, studentIds = []) {
   const sessions = [];
   const {
     id: scheduleId,
@@ -46,10 +49,8 @@ async function generateSessions(schedule) {
     endDate,
     startTime,
     endTime,
-    meetingLink,
     courseId,
     teacherId,
-    studentId,
     courseDetailsId,
     shift,
   } = schedule;
@@ -59,11 +60,11 @@ async function generateSessions(schedule) {
     title,
     startTime,
     endTime,
-    meetingLink: null, // sessions inherit from schedule via join; null means "use schedule link"
+    meetingLink: null,
     status: 'scheduled',
     courseId,
     teacherId,
-    studentId,
+    studentId: null, // always null — student assignment handled by ClassSessionStudents
     courseDetailsId,
     shift: shift || null,
   };
@@ -71,23 +72,18 @@ async function generateSessions(schedule) {
   if (recurrenceType === 'one-time') {
     sessions.push({ ...baseSession, date: startDate });
   } else {
-    // Weekly or biweekly
-    const interval = recurrenceType === 'biweekly' ? 14 : 7;
     const days = Array.isArray(daysOfWeek) ? daysOfWeek : [];
     const end = endDate ? new Date(endDate) : (() => {
-      // Cap at 1 year if no endDate
       const d = new Date(startDate);
       d.setFullYear(d.getFullYear() + 1);
       return d;
     })();
 
     let current = new Date(startDate);
-    // Safety cap: max 500 sessions to avoid runaway generation
     let count = 0;
     while (current <= end && count < 500) {
       if (days.includes(current.getDay())) {
-        const dateStr = current.toISOString().slice(0, 10);
-        sessions.push({ ...baseSession, date: dateStr });
+        sessions.push({ ...baseSession, date: current.toISOString().slice(0, 10) });
         count++;
       }
       current.setDate(current.getDate() + 1);
@@ -96,11 +92,22 @@ async function generateSessions(schedule) {
 
   if (sessions.length > 0) {
     const created = await ClassSession.bulkCreate(sessions, { returning: true });
-    // Assign deterministic room IDs now that we have PKs
-    const updates = created.map((s) =>
-      ClassSession.update({ roomId: `lms-${s.id}` }, { where: { id: s.id } })
+
+    // Assign room IDs
+    await Promise.all(
+      created.map((s) => ClassSession.update({ roomId: `lms-${s.id}` }, { where: { id: s.id } }))
     );
-    await Promise.all(updates);
+
+    // Link students via junction table if specific students were selected
+    if (studentIds.length > 0) {
+      const junctionRows = [];
+      for (const s of created) {
+        for (const sid of studentIds) {
+          junctionRows.push({ sessionId: s.id, studentId: Number(sid) });
+        }
+      }
+      await ClassSessionStudent.bulkCreate(junctionRows, { ignoreDuplicates: true });
+    }
   }
   return sessions.length;
 }
@@ -137,24 +144,13 @@ exports.createSchedule = async (req, res) => {
       shift: shift || null,
     };
 
-    const selectedStudentIds = Array.isArray(studentIds) && studentIds.length > 0 ? studentIds : [];
-    let totalSessionCount = 0;
-    let lastSchedule;
+    const selectedStudentIds = Array.isArray(studentIds) && studentIds.length > 0
+      ? studentIds.map(Number) : [];
 
-    if (selectedStudentIds.length > 0) {
-      // Create one schedule + sessions per selected student (personal sessions)
-      for (const sid of selectedStudentIds) {
-        const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: sid });
-        const count = await generateSessions(schedule);
-        totalSessionCount += count;
-        lastSchedule = schedule;
-      }
-    } else {
-      // Group session — visible to all enrolled students in the course
-      const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: null });
-      totalSessionCount = await generateSessions(schedule);
-      lastSchedule = schedule;
-    }
+    // Always one schedule; student assignment is in ClassSessionStudents junction table
+    const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: null });
+    const totalSessionCount = await generateSessions(schedule, selectedStudentIds);
+    const lastSchedule = schedule;
 
     return res.status(201).json({
       message: 'Schedule created successfully',
@@ -181,7 +177,11 @@ exports.proposeSession = async (req, res) => {
       return res.status(400).json({ message: 'title, startTime, endTime, startDate, courseId, teacherId are required' });
     }
 
-    const scheduleBase = {
+    const selectedStudentIds = Array.isArray(studentIds) && studentIds.length > 0
+      ? studentIds.map(Number) : [];
+
+    // One schedule — student assignment via junction table
+    const schedule = await ClassSchedule.create({
       title,
       recurrenceType: 'one-time',
       daysOfWeek: null,
@@ -191,34 +191,26 @@ exports.proposeSession = async (req, res) => {
       status: 'pending',
       createdBy: 'teacher',
       courseId, teacherId,
+      studentId: null,
       courseDetailsId: courseDetailsId || null,
       shift: shift || null,
-    };
+    });
 
-    const selectedStudentIds = Array.isArray(studentIds) && studentIds.length > 0 ? studentIds : [];
-    let lastSchedule;
+    const proposedSession = await ClassSession.create({
+      scheduleId: schedule.id, title, date: startDate, startTime, endTime,
+      meetingLink: null, status: 'scheduled', courseId, teacherId,
+      studentId: null, courseDetailsId: courseDetailsId || null, shift: shift || null,
+    });
+    await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
 
     if (selectedStudentIds.length > 0) {
-      for (const sid of selectedStudentIds) {
-        const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: sid });
-        const proposedSession = await ClassSession.create({
-          scheduleId: schedule.id, title, date: startDate, startTime, endTime,
-          meetingLink: null, status: 'scheduled', courseId, teacherId,
-          studentId: sid, courseDetailsId: courseDetailsId || null, shift: shift || null,
-        });
-        await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
-        lastSchedule = schedule;
-      }
-    } else {
-      const schedule = await ClassSchedule.create({ ...scheduleBase, studentId: null });
-      const proposedSession = await ClassSession.create({
-        scheduleId: schedule.id, title, date: startDate, startTime, endTime,
-        meetingLink: null, status: 'scheduled', courseId, teacherId,
-        studentId: null, courseDetailsId: courseDetailsId || null, shift: shift || null,
-      });
-      await proposedSession.update({ roomId: `lms-${proposedSession.id}` });
-      lastSchedule = schedule;
+      await ClassSessionStudent.bulkCreate(
+        selectedStudentIds.map((sid) => ({ sessionId: proposedSession.id, studentId: sid })),
+        { ignoreDuplicates: true }
+      );
     }
+
+    const lastSchedule = schedule;
 
     // Notify admins of pending proposal
     const admins = await Admin.findAll({ attributes: ['id'] });
@@ -489,8 +481,45 @@ exports.getTeacherSchedules = async (req, res) => {
 exports.getStudentSchedules = async (req, res) => {
   try {
     const { studentId } = req.params;
+
+    // Find schedules via sessions that are assigned to this student in the junction table,
+    // plus schedules for group sessions (no junction rows) in courses the student is enrolled in.
+    const { literal } = require('sequelize');
+    const enrolledCourses = await CourseDetails.findAll({
+      where: { studentId },
+      attributes: ['courseId'],
+    });
+    const enrolledCourseIds = enrolledCourses.map((cd) => cd.courseId);
+
+    // Get session IDs visible to this student
+    const assignedSessionIds = await ClassSessionStudent.findAll({
+      where: { studentId },
+      attributes: ['sessionId'],
+    });
+    const assignedIds = assignedSessionIds.map((r) => r.sessionId);
+
+    // Get unique scheduleIds from those sessions + group sessions in enrolled courses
+    const { Op: OpLocal } = require('sequelize');
+    const visibleSessions = await ClassSession.findAll({
+      where: {
+        [OpLocal.or]: [
+          ...(assignedIds.length > 0 ? [{ id: { [OpLocal.in]: assignedIds } }] : []),
+          ...(enrolledCourseIds.length > 0
+            ? [{
+                courseId: { [OpLocal.in]: enrolledCourseIds },
+                [OpLocal.and]: [literal(`(SELECT COUNT(*) FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id) = 0`)],
+              }]
+            : []),
+        ],
+      },
+      attributes: ['scheduleId'],
+    });
+    const scheduleIds = [...new Set(visibleSessions.map((s) => s.scheduleId).filter(Boolean))];
+
+    if (scheduleIds.length === 0) return res.json([]);
+
     const schedules = await ClassSchedule.findAll({
-      where: { studentId, status: 'active' },
+      where: { id: scheduleIds, status: 'active' },
       include: [
         { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
         { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName'] },
@@ -507,7 +536,10 @@ exports.getStudentSchedules = async (req, res) => {
 // ---------------------------------------------------------------------------
 // Helper: format a ClassSession row into a FullCalendar event object
 // ---------------------------------------------------------------------------
-function formatSessionEvent(session, scheduleStatus, teacher, course, student, userTz = PKT) {
+// students: array from ClassSessionStudents join. Empty = group session.
+function formatSessionEvent(session, scheduleStatus, teacher, course, students, userTz = PKT) {
+  // Normalise: accept single object (legacy) or array
+  if (students && !Array.isArray(students)) students = [students];
   // Determine effective status for color
   const effectiveStatus = session.status === 'scheduled' && scheduleStatus === 'pending'
     ? 'pending'
@@ -552,7 +584,14 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, student, u
       courseName: course ? course.courseName : null,
       teacherName: teacher ? `${teacher.firstName} ${teacher.lastName}` : null,
       teacherImageUrl: teacher ? teacher.imageUrl : null,
-      studentName: student ? `${student.firstName} ${student.lastName}` : null,
+      // students[] from junction table — empty means group session
+      studentIds: (students || []).map((s) => s.id),
+      studentNames: (students || []).map((s) => `${s.firstName} ${s.lastName}`),
+      // Convenience aliases kept for backward compat
+      studentId: students && students.length === 1 ? students[0].id : null,
+      studentName: students && students.length === 1
+        ? `${students[0].firstName} ${students[0].lastName}`
+        : students && students.length > 1 ? `${students.length} students` : null,
       cancellationReason: session.cancellationReason || null,
       shift: session.shift || null,
     },
@@ -639,82 +678,79 @@ exports.getCalendarEvents = async (req, res) => {
     // -----------------------------------------------------------------------
     let sessions = [];
 
+    // Common session includes used by all roles
+    const sessionIncludes = [
+      { model: ClassSchedule, as: 'schedule', attributes: ['status', 'meetingLink', 'createdBy'] },
+      { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
+      { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
+      { model: Student, as: 'Students', through: { attributes: [] }, attributes: ['id', 'firstName', 'lastName'], required: false },
+    ];
+
     if (role === 'admin') {
-      // When no date range is provided, cap to 500 sessions to prevent full-table scans
       const adminLimit = Object.keys(sessionWhere).length === 0 ? 500 : undefined;
       sessions = await ClassSession.findAll({
         where: sessionWhere,
-        include: [
-          { model: ClassSchedule, as: 'schedule', attributes: ['status', 'meetingLink', 'createdBy'] },
-          { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
-          { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
-          { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
-        ],
+        include: sessionIncludes,
         order: [['date', 'ASC']],
         ...(adminLimit ? { limit: adminLimit } : {}),
       });
     } else if (role === 'teacher') {
       sessions = await ClassSession.findAll({
         where: { ...sessionWhere, teacherId: userId },
-        include: [
-          { model: ClassSchedule, as: 'schedule', attributes: ['status', 'meetingLink', 'createdBy'] },
-          { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
-          { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
-          { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
-        ],
+        include: sessionIncludes,
         order: [['date', 'ASC']],
       });
     } else if (role === 'student') {
-      // Fetch student's shift AND enrolled courses in parallel
       const [studentRecord, enrolledCourses] = await Promise.all([
         Student.findByPk(userId, { attributes: ['id', 'shift'] }),
         CourseDetails.findAll({ where: { studentId: userId }, attributes: ['courseId'] }),
       ]);
       const studentShift = studentRecord ? studentRecord.shift : null;
       const enrolledCourseIds = enrolledCourses.map((cd) => cd.courseId);
-      // Use -1 sentinel so Op.in never throws on empty array (matches nothing)
       const courseIdFilter = enrolledCourseIds.length > 0 ? { [Op.in]: enrolledCourseIds } : { [Op.eq]: -1 };
 
-      // Personal sessions (studentId = userId): always visible regardless of shift or course
-      // Group sessions (studentId = null): only for enrolled courses + matching shift
-      let studentSessionWhere;
+      // A session is visible if:
+      //   (a) student is in ClassSessionStudents for this session, OR
+      //   (b) session has NO ClassSessionStudents rows (group) AND enrolled in course AND shift matches
+      const { literal } = require('sequelize');
+      const assignedToMe = literal(
+        `(SELECT COUNT(*) FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id) > 0 AND ` +
+        `EXISTS (SELECT 1 FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id AND ClassSessionStudents.studentId = ${Number(userId)})`
+      );
+      const isGroup = literal(
+        `(SELECT COUNT(*) FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id) = 0`
+      );
+
+      let groupCond;
       if (studentShift) {
-        studentSessionWhere = {
-          ...sessionWhere,
-          [Op.or]: [
-            { studentId: userId },
-            {
-              [Op.and]: [
-                { studentId: null },
-                { courseId: courseIdFilter },
-                { [Op.or]: [{ shift: studentShift }, { shift: null }] },
-              ],
-            },
+        groupCond = {
+          [Op.and]: [
+            { [Op.and]: [literal(`(SELECT COUNT(*) FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id) = 0`)] },
+            { courseId: courseIdFilter },
+            { [Op.or]: [{ shift: studentShift }, { shift: null }] },
           ],
         };
       } else {
-        // No shift assigned: show personal sessions + enrolled-course group sessions (any shift)
-        studentSessionWhere = {
-          ...sessionWhere,
-          [Op.or]: [
-            { studentId: userId },
-            { [Op.and]: [{ studentId: null }, { courseId: courseIdFilter }] },
+        groupCond = {
+          [Op.and]: [
+            { [Op.and]: [literal(`(SELECT COUNT(*) FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id) = 0`)] },
+            { courseId: courseIdFilter },
           ],
         };
       }
 
       sessions = await ClassSession.findAll({
-        where: studentSessionWhere,
-        include: [
-          { model: ClassSchedule, as: 'schedule', attributes: ['status', 'meetingLink', 'createdBy'] },
-          { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
-          { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
-          { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
-        ],
+        where: {
+          ...sessionWhere,
+          [Op.or]: [
+            { [Op.and]: [literal(`EXISTS (SELECT 1 FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id AND ClassSessionStudents.studentId = ${Number(userId)})`)] },
+            groupCond,
+          ],
+        },
+        include: sessionIncludes,
         order: [['date', 'ASC']],
       });
     } else if (role === 'parent') {
-      // Find all children of this parent (with their shift)
       const children = await Student.findAll({
         where: { parentId: userId },
         attributes: ['id', 'firstName', 'lastName', 'shift'],
@@ -723,7 +759,6 @@ exports.getCalendarEvents = async (req, res) => {
       if (children.length === 0) {
         sessions = [];
       } else {
-        // Fetch each child's enrolled courses in parallel
         const childEnrollments = await Promise.all(
           children.map(async (child) => {
             const cds = await CourseDetails.findAll({ where: { studentId: child.id }, attributes: ['courseId'] });
@@ -731,42 +766,31 @@ exports.getCalendarEvents = async (req, res) => {
           })
         );
 
-        // Personal sessions for each child: always visible
-        const childPersonal = children.map((c) => ({ studentId: c.id }));
-
-        // Group sessions: per child — enrolled courses only + matching shift
-        const groupConditions = [];
+        const { literal } = require('sequelize');
+        const orConditions = [];
         for (const { child, courseIds } of childEnrollments) {
+          // Sessions specifically assigned to this child
+          orConditions.push({
+            [Op.and]: [literal(`EXISTS (SELECT 1 FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id AND ClassSessionStudents.studentId = ${Number(child.id)})`)],
+          });
+          // Group sessions in enrolled courses (with shift filter)
           const childCourseFilter = courseIds.length > 0 ? { [Op.in]: courseIds } : { [Op.eq]: -1 };
+          const groupBase = {
+            [Op.and]: [
+              { [Op.and]: [literal(`(SELECT COUNT(*) FROM ClassSessionStudents WHERE ClassSessionStudents.sessionId = ClassSession.id) = 0`)] },
+              { courseId: childCourseFilter },
+            ],
+          };
           if (child.shift) {
-            groupConditions.push({
-              [Op.and]: [
-                { studentId: null },
-                { courseId: childCourseFilter },
-                { [Op.or]: [{ shift: child.shift }, { shift: null }] },
-              ],
-            });
+            orConditions.push({ [Op.and]: [groupBase, { [Op.or]: [{ shift: child.shift }, { shift: null }] }] });
           } else {
-            // Child has no shift: can see enrolled-course group sessions of any shift
-            groupConditions.push({
-              [Op.and]: [{ studentId: null }, { courseId: childCourseFilter }],
-            });
+            orConditions.push(groupBase);
           }
         }
 
-        const parentSessionWhere = {
-          ...sessionWhere,
-          [Op.or]: [...childPersonal, ...groupConditions],
-        };
-
         sessions = await ClassSession.findAll({
-          where: parentSessionWhere,
-          include: [
-            { model: ClassSchedule, as: 'schedule', attributes: ['status', 'meetingLink', 'createdBy'] },
-            { model: Courses, foreignKey: 'courseId', attributes: ['id', 'courseName'] },
-            { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
-            { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
-          ],
+          where: { ...sessionWhere, [Op.or]: orConditions },
+          include: sessionIncludes,
           order: [['date', 'ASC']],
         });
       }
@@ -777,8 +801,8 @@ exports.getCalendarEvents = async (req, res) => {
       const scheduleStatus = session.schedule ? session.schedule.status : 'active';
       const teacher = session.Teacher || null;
       const course = session.Course || null;
-      const student = session.Student || null;
-      events.push(formatSessionEvent(session, scheduleStatus, teacher, course, student, userTz));
+      const students = session.Students || [];
+      events.push(formatSessionEvent(session, scheduleStatus, teacher, course, students, userTz));
     }
 
     // -----------------------------------------------------------------------
@@ -918,7 +942,6 @@ exports.joinSession = async (req, res) => {
     const session = await ClassSession.findByPk(sessionId, {
       include: [
         { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName'] },
-        { model: Student, foreignKey: 'studentId', attributes: ['id', 'firstName', 'lastName'] },
       ],
     });
 
@@ -929,9 +952,10 @@ exports.joinSession = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized for this session' });
     }
     if (role === 'student') {
-      // Allow if this is a personal session for this student, OR a group session (studentId=null)
-      const isPersonalSession = session.studentId !== null;
-      if (isPersonalSession && String(session.studentId) !== String(userId)) {
+      // Check junction table: if session has specific students assigned, this student must be one of them
+      const assignedRows = await ClassSessionStudent.findAll({ where: { sessionId }, attributes: ['studentId'] });
+      const isPersonalSession = assignedRows.length > 0;
+      if (isPersonalSession && !assignedRows.find((r) => String(r.studentId) === String(userId))) {
         return res.status(403).json({ message: 'Not authorized for this session' });
       }
       if (session.sessionStatus !== 'live') {
@@ -950,11 +974,7 @@ exports.joinSession = async (req, res) => {
     if (role === 'teacher' && session.Teacher) {
       userName = `${session.Teacher.firstName} ${session.Teacher.lastName}`;
     } else if (role === 'student') {
-      // For group sessions session.Student is null (no specific student tied to the session).
-      // Always look up the actual requesting student by userId so every participant
-      // gets their real name — prevents all students falling back to "Participant"
-      // which causes username-collision errors in MiroTalk.
-      const requestingStudent = session.Student || await Student.findByPk(userId, { attributes: ['firstName', 'lastName'] });
+      const requestingStudent = await Student.findByPk(userId, { attributes: ['firstName', 'lastName'] });
       if (requestingStudent) {
         userName = `${requestingStudent.firstName} ${requestingStudent.lastName}`;
       }
@@ -1136,7 +1156,7 @@ exports.endSession = async (req, res) => {
 exports.updateSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { title, date, startTime, endTime, notes, shift, meetingLink, teacherId } = req.body;
+    const { title, date, startTime, endTime, notes, shift, meetingLink, teacherId, studentIds } = req.body;
 
     const session = await ClassSession.findByPk(sessionId);
     if (!session) return res.status(404).json({ message: 'Session not found' });
@@ -1168,6 +1188,18 @@ exports.updateSession = async (req, res) => {
     if (isTeacherChanging) updates.teacherId = Number(teacherId);
 
     await session.update(updates);
+
+    // Handle student assignment via junction table
+    if (Array.isArray(studentIds)) {
+      // Remove existing junction rows and replace with new selection
+      await ClassSessionStudent.destroy({ where: { sessionId: session.id } });
+      if (studentIds.length > 0) {
+        await ClassSessionStudent.bulkCreate(
+          studentIds.map((sid) => ({ sessionId: session.id, studentId: Number(sid) })),
+          { ignoreDuplicates: true }
+        );
+      }
+    }
 
     // -----------------------------------------------------------------------
     // Notifications
@@ -1300,6 +1332,13 @@ exports.getSessionsList = async (req, res) => {
           attributes: ['id', 'recurrenceType', 'daysOfWeek', 'title', 'status'],
           required: false,
         },
+        {
+          model: Student,
+          as: 'Students',
+          through: { attributes: [] },
+          attributes: ['id', 'firstName', 'lastName', 'profileImg'],
+          required: false,
+        },
       ],
       order: [
         ['date', 'ASC'],
@@ -1307,12 +1346,10 @@ exports.getSessionsList = async (req, res) => {
       ],
     });
 
-    // Attach enrolled students for each session via CourseDetails (by courseId only).
-    // We intentionally do NOT filter by teacherId here so that students remain visible
-    // even after a teacher is reassigned — the enrollment (CourseDetails) still points
-    // to the original teacher, but the session's teacherId has changed.
-    const courseIds = [...new Set(sessions.map((s) => s.courseId))];
-    let studentMap = {};
+    // For group sessions (no junction rows), attach all enrolled students from CourseDetails
+    const sessionIds = sessions.filter((s) => !s.Students || s.Students.length === 0).map((s) => s.id);
+    const courseIds = [...new Set(sessions.filter((s) => !s.Students || s.Students.length === 0).map((s) => s.courseId))];
+    let enrolledStudentMap = {};
     if (courseIds.length > 0) {
       const enrollments = await CourseDetails.findAll({
         where: { courseId: courseIds },
@@ -1322,18 +1359,22 @@ exports.getSessionsList = async (req, res) => {
       enrollments.forEach((cd) => {
         if (!cd.Student) return;
         const key = String(cd.courseId);
-        if (!studentMap[key]) studentMap[key] = [];
-        // Deduplicate — same student may have multiple CourseDetails rows
-        if (!studentMap[key].find((s) => s.id === cd.Student.id)) {
-          studentMap[key].push(cd.Student);
+        if (!enrolledStudentMap[key]) enrolledStudentMap[key] = [];
+        if (!enrolledStudentMap[key].find((s) => s.id === cd.Student.id)) {
+          enrolledStudentMap[key].push(cd.Student);
         }
       });
     }
 
-    const result = sessions.map((s) => ({
-      ...s.toJSON(),
-      students: studentMap[String(s.courseId)] || [],
-    }));
+    const result = sessions.map((s) => {
+      // If session has specific students via junction table, use those
+      // Otherwise it's a group session — show all enrolled students for the course
+      const junctionStudents = s.Students || [];
+      const students = junctionStudents.length > 0
+        ? junctionStudents
+        : (enrolledStudentMap[String(s.courseId)] || []);
+      return { ...s.toJSON(), students };
+    });
 
     return res.json({ sessions: result });
   } catch (err) {
