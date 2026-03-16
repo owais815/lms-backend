@@ -50,6 +50,7 @@ router.get('/dashboard-stats/:studentId',          isAuth, studentController.get
 router.get('/dashboard/assess/:studentId',        isAuth, studentController.getAssessmentScore);
 router.get('/dashboard/leaderboard/:studentId',   isAuth, studentController.getLeaderboard);
 router.get('/upcoming-classes/:studentId',        isAuth, studentController.getUpcomingClasses);
+router.get('/my-teachers/:studentId',             isAuth, studentController.getMyTeachers);
 router.post('/upload-image',                      isAuth, studentController.uploadImage);
 router.get('/profileImage/:studentId',            isAuth, studentController.getProfileImage);
 

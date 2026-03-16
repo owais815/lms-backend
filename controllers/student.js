@@ -924,6 +924,26 @@ exports.countRecentStudents = (req, res, next) => {
     });
 };
 
+exports.getMyTeachers = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+    const student = await Student.findByPk(studentId, {
+      include: [{
+        model: Teacher,
+        attributes: ['id', 'firstName', 'lastName', 'email', 'imageUrl', 'shift'],
+        through: { attributes: [] },
+      }],
+    });
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found.' });
+    }
+    res.status(200).json({ teachers: student.Teachers || [] });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};
+
 exports.getDashboardStats = async (req, res, next) => {
   try {
     const { studentId } = req.params;
