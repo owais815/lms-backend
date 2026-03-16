@@ -336,6 +336,22 @@ exports.getCourses = (req, res, next) => {
         });
   };
 
+exports.getStudentsByCourse = (req, res, next) => {
+  const courseId = req.params.courseId;
+  CourseDetails.findAll({
+    where: { courseId },
+    include: [{ model: Student, as: 'Student', attributes: ['id', 'firstName', 'lastName'] }],
+  })
+    .then((details) => {
+      const students = details.map((d) => d.Student).filter(Boolean);
+      res.status(200).json({ students });
+    })
+    .catch((err) => {
+      if (!err.statusCode) err.statusCode = 500;
+      next(err);
+    });
+};
+
   exports.getUniqueCourses = (req, res, next) => {
     // Query the database to retrieve all Admin records
     CourseDetails.findAll(
