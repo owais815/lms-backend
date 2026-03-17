@@ -109,20 +109,28 @@ const ALLOWED_MIMETYPES = new Set([
   "image/png",
   "image/jpg",
   "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/jfif",
+  "image/heic",
+  "image/heif",
+  "image/avif",
   "application/pdf",
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
-const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.pdf', '.ppt', '.pptx', '.doc', '.docx']);
+const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.jfif', '.heic', '.heif', '.avif', '.pdf', '.ppt', '.pptx', '.doc', '.docx']);
 
 const fileFilter = (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   if (ALLOWED_MIMETYPES.has(file.mimetype) && ALLOWED_EXTENSIONS.has(ext)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Allowed: images (PNG/JPG), PDF, Word, PowerPoint'), false);
+    const err = new Error('Invalid file type. Allowed images: PNG, JPG, WEBP, GIF, HEIC. Allowed docs: PDF, Word, PowerPoint.');
+    err.statusCode = 422;
+    cb(err, false);
   }
 };
 
@@ -195,6 +203,13 @@ app.use("/api/salary", salaryRoutes);
 // ── Global error handler ─────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 app.use((error, _req, res, _next) => {
+  // Multer errors (file size, unexpected field, etc.) → 422
+  if (error.name === 'MulterError') {
+    error.statusCode = 422;
+    error.message = error.code === 'LIMIT_FILE_SIZE'
+      ? 'File is too large. Maximum size is 10 MB.'
+      : error.message;
+  }
   const status = error.statusCode || 500;
   const isProd = env === 'production';
   // In production, hide internal server error details to avoid leaking stack traces
