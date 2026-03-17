@@ -28,4 +28,12 @@ router.post('/approve/:quizId',  isAuth, checkPermission(PERMISSIONS.QUIZZES_APP
 router.post('/reject/:quizId',   isAuth, checkPermission(PERMISSIONS.QUIZZES_APPROVE), quizController.rejectQuizGroup);
 router.get('/admin/all',         isAuth, checkPermission(PERMISSIONS.QUIZZES_VIEW),    quizController.getAllQuizzesAdmin);
 
+// Get enrolled students for quiz creation (filter students)
+router.get('/enrolled-students', isAuth, quizController.getEnrolledStudents);
+
+// Quiz results
+router.get('/results/admin',             isAuth, checkPermission(PERMISSIONS.QUIZZES_VIEW), quizController.getAdminQuizResults);
+router.get('/results/teacher/:teacherId', isAuth, quizController.getTeacherQuizResults);
+router.get('/results/student/:studentId', isAuth, quizController.getStudentQuizResults);
+
 module.exports = router;

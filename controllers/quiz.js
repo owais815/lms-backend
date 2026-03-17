@@ -14,14 +14,20 @@ const notify = require("../utils/notify");
 
 exports.createQuiz = async (req, res, next) => {
   try {
-    const { title, instructions, duration, passingScore, teacherId, courseId } = req.body;
+    const { title, instructions, duration, passingScore, teacherId, courseId, studentIds } = req.body;
 
-    // Find all students enrolled in this course under this teacher
-    const courseDetailsList = await CourseDetails.findAll({
-      where: { courseId, teacherId },
-    });
-    if (!courseDetailsList.length) {
+    // Find enrolled students — filter to specific students if provided
+    const where = { courseId, teacherId };
+    let allCourseDetails = await CourseDetails.findAll({ where });
+    if (!allCourseDetails.length) {
       return res.status(400).json({ message: 'No students are enrolled in this course yet.' });
+    }
+    // If specific studentIds provided, filter to only those students
+    const courseDetailsList = (Array.isArray(studentIds) && studentIds.length > 0)
+      ? allCourseDetails.filter((cd) => studentIds.map(Number).includes(Number(cd.studentId)))
+      : allCourseDetails;
+    if (!courseDetailsList.length) {
+      return res.status(400).json({ message: 'None of the selected students are enrolled in this course.' });
     }
 
     // Check if teacher can publish directly or needs admin approval
@@ -379,11 +385,17 @@ exports.getStudentQuizzes = async (req, res, next) => {
           model: CourseDetails,
           include:[{model:Courses, attributes:['id','courseName']}],
           attributes: ['id','teacherId'],
-          as:'CourseDetails' 
+          as:'CourseDetails'
         },
         {
           model: Teacher,
-          attributes: ['id', 'firstName','lastName','imageUrl'] // Include teacher details if needed
+          attributes: ['id', 'firstName','lastName','imageUrl']
+        },
+        {
+          model: QuizAttempt,
+          where: { studentId: studentId },
+          attributes: ['id', 'startTime', 'endTime', 'score'],
+          required: false,
         }
       ],
       attributes: ['id', 'title', 'instructions', 'duration', 'passingScore', 'createdAt']
@@ -530,6 +542,105 @@ exports.rejectQuizGroup = async (req, res, next) => {
     res.status(200).json({ message: 'Quiz rejected', count: siblings.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
+    next(error);
+  }
+};
+
+// GET enrolled students for teacher + course (used when creating a quiz to filter students)
+exports.getEnrolledStudents = async (req, res, next) => {
+  try {
+    const { teacherId, courseId } = req.query;
+    if (!teacherId || !courseId) {
+      return res.status(400).json({ message: 'teacherId and courseId are required' });
+    }
+    const courseDetailsList = await CourseDetails.findAll({
+      where: { teacherId, courseId },
+      include: [{ model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] }],
+      attributes: ['id', 'studentId'],
+    });
+    const students = courseDetailsList
+      .filter((cd) => cd.Student)
+      .map((cd) => ({
+        id: cd.Student.id,
+        firstName: cd.Student.firstName,
+        lastName: cd.Student.lastName,
+        profileImg: cd.Student.profileImg,
+        courseDetailsId: cd.id,
+      }));
+    return res.json({ students });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET quiz results for admin (all attempts with student + quiz + teacher info)
+exports.getAdminQuizResults = async (req, res, next) => {
+  try {
+    const attempts = await QuizAttempt.findAll({
+      include: [
+        {
+          model: Quiz,
+          attributes: ['id', 'title', 'passingScore', 'duration', 'teacherId'],
+          include: [{ model: Teacher, attributes: ['id', 'firstName', 'lastName'] }],
+        },
+        { model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] },
+      ],
+      attributes: ['id', 'quizId', 'studentId', 'startTime', 'endTime', 'score'],
+      order: [['endTime', 'DESC']],
+      limit: 500,
+    });
+    return res.json({ results: attempts });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET quiz results for a specific teacher
+exports.getTeacherQuizResults = async (req, res, next) => {
+  try {
+    const { teacherId } = req.params;
+    const quizIds = await Quiz.findAll({
+      where: { teacherId },
+      attributes: ['id'],
+    });
+    if (!quizIds.length) return res.json({ results: [] });
+
+    const attempts = await QuizAttempt.findAll({
+      where: { quizId: { [Op.in]: quizIds.map((q) => q.id) } },
+      include: [
+        {
+          model: Quiz,
+          attributes: ['id', 'title', 'passingScore', 'duration'],
+        },
+        { model: Student, attributes: ['id', 'firstName', 'lastName', 'profileImg'] },
+      ],
+      attributes: ['id', 'quizId', 'studentId', 'startTime', 'endTime', 'score'],
+      order: [['endTime', 'DESC']],
+    });
+    return res.json({ results: attempts });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET quiz results for a specific student (their own history)
+exports.getStudentQuizResults = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+    const attempts = await QuizAttempt.findAll({
+      where: { studentId },
+      include: [
+        {
+          model: Quiz,
+          attributes: ['id', 'title', 'passingScore', 'duration', 'teacherId'],
+          include: [{ model: Teacher, attributes: ['id', 'firstName', 'lastName'] }],
+        },
+      ],
+      attributes: ['id', 'quizId', 'studentId', 'startTime', 'endTime', 'score'],
+      order: [['endTime', 'DESC']],
+    });
+    return res.json({ results: attempts });
+  } catch (error) {
     next(error);
   }
 };
