@@ -80,6 +80,9 @@ const PERMISSIONS = {
   CERTIFICATES_VIEW:   'certificates:view',
   CERTIFICATES_MANAGE: 'certificates:manage',
 
+  // Session Transcripts
+  TRANSCRIPTS_VIEW: 'transcripts:view',
+
   // Salary Management
   SALARY_VIEW:   'salary:view',
   SALARY_MANAGE: 'salary:manage',
