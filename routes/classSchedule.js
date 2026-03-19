@@ -48,6 +48,11 @@ router.post('/sessions/:sessionId/join', isAuth, ctrl.joinSession);
 router.post('/sessions/:sessionId/start', isAuth, ctrl.startSession);
 router.post('/sessions/:sessionId/end', isAuth, ctrl.endSession);
 
+// Whisper transcript — save called server-to-server by calling-app (no isAuth, uses x-calling-secret)
+router.post('/sessions/:sessionId/transcript', ctrl.saveTranscript);
+// Get transcript — accessible to authenticated users
+router.get('/sessions/:sessionId/transcript', isAuth, ctrl.getTranscript);
+
 // Get single session detail
 router.get('/sessions/:sessionId', isAuth, ctrl.getSession);
 
