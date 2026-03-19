@@ -1317,6 +1317,11 @@ exports.getSessionsList = async (req, res) => {
     if (shift) where.shift = shift;
     if (sessionStatus) where.sessionStatus = sessionStatus;
 
+    // Filter to only sessions that have a saved transcript
+    if (req.query.hasTranscript === 'true') {
+      where.transcriptText = { [Op.ne]: null };
+    }
+
     const sessions = await ClassSession.findAll({
       where,
       include: [
@@ -1543,6 +1548,56 @@ exports.getTeacherAvailability = async (req, res) => {
     });
   } catch (err) {
     console.error('getTeacherAvailability error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/class-schedule/sessions/:sessionId/transcript
+// Called by the calling-app (server-to-server) after Whisper transcription.
+// Authenticated by the shared CALLING_APP_API_SECRET header.
+// ---------------------------------------------------------------------------
+exports.saveTranscript = async (req, res) => {
+  try {
+    const expectedSecret = process.env.CALLING_APP_API_SECRET;
+    const providedSecret = req.headers['x-calling-secret'] || req.headers['authorization'];
+    if (!expectedSecret || providedSecret !== expectedSecret) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { sessionId } = req.params;
+    const { transcriptText } = req.body;
+    if (!transcriptText) return res.status(400).json({ message: 'transcriptText is required' });
+
+    const session = await ClassSession.findByPk(sessionId);
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+
+    await session.update({ transcriptText });
+    return res.json({ message: 'Transcript saved' });
+  } catch (err) {
+    console.error('saveTranscript error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/class-schedule/sessions/:sessionId/transcript
+// Returns the transcript text for a session. Accessible by teacher/admin/student.
+// ---------------------------------------------------------------------------
+exports.getTranscript = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await ClassSession.findByPk(sessionId, {
+      attributes: ['id', 'title', 'transcriptText'],
+    });
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+    return res.json({
+      sessionId: session.id,
+      title: session.title,
+      transcriptText: session.transcriptText || null,
+    });
+  } catch (err) {
+    console.error('getTranscript error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
