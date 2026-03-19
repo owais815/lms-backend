@@ -92,6 +92,12 @@ const ClassSession = sequelize.define('ClassSession', {
     allowNull: true,
     defaultValue: null,
   },
+  // Whisper-generated transcript stored after session ends
+  transcriptText: {
+    type: DataTypes.TEXT('long'),
+    allowNull: true,
+    defaultValue: null,
+  },
 }, {
   tableName: 'ClassSessions',
   timestamps: true,
