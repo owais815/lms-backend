@@ -82,6 +82,7 @@ exports.login = (req, res, next) => {
           id: String(loggedIn.id),
           email: loggedIn.email || null,
           username: loggedIn.username,
+          userType: 'PARENT',
           role: { id: 'parent', name: 'PARENT', description: null, isSystem: true, isActive: true },
           permissions: [],
           isActive: true,
