@@ -420,9 +420,9 @@ exports.addCourse =async (req,res,next)=>{
             error.data = errors.array();
             throw error;
         }
-        const {courseName, duration, description,isComing} = req.body;
+        const {courseName, duration, description, isComing, price} = req.body;
         const { file } = req;
-        
+
         const imageUrl = file && file?.path?.replace("\\", "/");
 
         const newCourse = await Courses.create({
@@ -430,6 +430,7 @@ exports.addCourse =async (req,res,next)=>{
             duration,
             description,
             isComing,
+            price: price !== undefined && price !== '' ? parseFloat(price) : null,
             imageUrl: file ? imageUrl : null
         });
         res.status(201).json({ message: 'Course added successfully.', newCourse });
