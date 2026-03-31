@@ -173,7 +173,7 @@ exports.login = (req, res, next) => {
           userType: 'STUDENT',
         },
         process.env.JWT_SECRET,
-        { expiresIn: "1h" }
+        { expiresIn: "8h" }
       );
 
       res.status(200).json({

@@ -164,7 +164,7 @@ exports.login = async (req, res, next) => {
                 roleId:   user.roleId || null,
             },
             process.env.JWT_SECRET,
-            { expiresIn: '1h' }
+            { expiresIn: '8h' }
         );
 
         const role = user.Role
