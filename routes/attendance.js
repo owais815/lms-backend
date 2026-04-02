@@ -19,7 +19,7 @@ router.post('/getStatus',              isAuth, attendanceController.checkAttenda
 router.get('/course/:courseDetailsId', isAuth, attendanceController.getCourseAttendance);
 
 // ─── Session-based routes ─────────────────────────────────────────────────────
-router.post('/bulk-mark',              isAuth, checkPermission(PERMISSIONS.ATTENDANCE_MARK), attendanceController.bulkMarkAttendance);
+router.post('/bulk-mark',              isAuth, attendanceController.bulkMarkAttendance);
 router.get('/session/:sessionId',      isAuth, attendanceController.getSessionAttendanceSheet);
 router.get('/teacher/:teacherId/sessions', isAuth, attendanceController.getTeacherSessions);
 
