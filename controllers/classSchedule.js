@@ -1490,6 +1490,182 @@ exports.deleteSession = async (req, res) => {
 };
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// GET /api/class-schedule/check-conflicts
+// Query: teacherId, courseId, date (YYYY-MM-DD), startTime (HH:MM), endTime (HH:MM)
+// Returns teacher conflicts (hard) + student conflicts (soft) for the modal.
+// ---------------------------------------------------------------------------
+exports.checkConflicts = async (req, res) => {
+  try {
+    const { teacherId, courseId, date, startTime, endTime } = req.query;
+    if (!date || !startTime || !endTime) {
+      return res.status(400).json({ message: 'date, startTime, endTime are required' });
+    }
+
+    // Only active, non-ended sessions are real conflicts.
+    // status ENUM: scheduled | completed | cancelled | makeup  (no 'pending' in this table)
+    // sessionStatus ENUM: idle | live | ended
+    // Exclude completed (past) and cancelled (dropped).
+    // Exclude sessionStatus 'ended' — call finished even if admin hasn't closed it formally.
+    const timeOverlap = {
+      date,
+      status: { [Op.in]: ['scheduled', 'makeup'] },
+      sessionStatus: { [Op.notIn]: ['ended'] },
+      startTime: { [Op.lt]: endTime },
+      endTime: { [Op.gt]: startTime },
+    };
+
+    // -----------------------------------------------------------------------
+    // 1. Teacher conflicts
+    // -----------------------------------------------------------------------
+    let teacherConflicts = [];
+    if (teacherId) {
+      const sessions = await ClassSession.findAll({
+        where: { ...timeOverlap, teacherId: Number(teacherId) },
+        include: [{ model: Courses, attributes: ['id', 'courseName'] }],
+        attributes: ['id', 'title', 'date', 'startTime', 'endTime', 'status', 'sessionStatus'],
+      });
+      teacherConflicts = sessions.map((s) => s.toJSON());
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. Student conflicts
+    // -----------------------------------------------------------------------
+    let studentConflicts = [];
+    if (courseId) {
+      // Enrolled students — dedup by studentId: one student can appear in multiple
+      // CourseDetails rows (different teachers / sections for the same course).
+      const enrollments = await CourseDetails.findAll({
+        where: { courseId: Number(courseId) },
+        include: [{ model: Student, attributes: ['id', 'firstName', 'lastName'], required: true }],
+      });
+      const seenIds = new Set();
+      const enrolledStudents = [];
+      for (const e of enrollments) {
+        if (e.Student && !seenIds.has(e.Student.id)) {
+          seenIds.add(e.Student.id);
+          enrolledStudents.push(e.Student);
+        }
+      }
+      const enrolledIds = enrolledStudents.map((s) => s.id);
+      const enrolledIdSet = new Set(enrolledIds);
+
+      if (enrolledIds.length > 0) {
+        // a) Sessions where enrolled students are EXPLICITLY assigned
+        const explicitSessions = await ClassSession.findAll({
+          where: timeOverlap,
+          include: [
+            { model: Courses, attributes: ['id', 'courseName'] },
+            {
+              model: Student,
+              as: 'Students',
+              through: { attributes: [] },
+              where: { id: { [Op.in]: enrolledIds } },
+              attributes: ['id', 'firstName', 'lastName'],
+              required: true,
+            },
+          ],
+          attributes: ['id', 'title', 'date', 'startTime', 'endTime', 'status', 'sessionStatus'],
+        });
+
+        for (const session of explicitSessions) {
+          for (const student of session.Students) {
+            studentConflicts.push({
+              studentId: student.id,
+              studentName: `${student.firstName} ${student.lastName}`,
+              session: {
+                id: session.id,
+                title: session.title,
+                date: session.date,
+                startTime: session.startTime,
+                endTime: session.endTime,
+                course: session.Course,
+              },
+            });
+          }
+        }
+
+        // b) GROUP sessions (no explicit assignments) of courses that enrolled students are in
+        //    Use raw query: ClassSessions with no ClassSessionStudents rows, for courses
+        //    that any enrolled student is enrolled in.
+        const { QueryTypes } = require('sequelize');
+        const otherEnrollments = await CourseDetails.findAll({
+          where: { studentId: { [Op.in]: enrolledIds } },
+          attributes: ['studentId', 'courseId'],
+        });
+
+        // Build map: courseId → Set<studentId> enrolled in that course
+        const courseStudentMap = {};
+        for (const e of otherEnrollments) {
+          if (!courseStudentMap[e.courseId]) courseStudentMap[e.courseId] = new Set();
+          courseStudentMap[e.courseId].add(e.studentId);
+        }
+        const otherCourseIds = Object.keys(courseStudentMap).map(Number);
+
+        // Guard: IN () is invalid SQL — skip if no cross-enrollments found
+        if (otherCourseIds.length > 0) {
+          const groupSessions = await ClassSession.sequelize.query(
+            `SELECT cs.id, cs.title, cs.date, cs.startTime, cs.endTime, cs.status, cs.sessionStatus, cs.courseId,
+                    co.courseName
+             FROM ClassSessions cs
+             JOIN Courses co ON co.id = cs.courseId
+             LEFT JOIN ClassSessionStudents css ON css.sessionId = cs.id
+             WHERE cs.date = :date
+               AND cs.status IN ('scheduled', 'makeup')
+               AND cs.sessionStatus NOT IN ('ended')
+               AND cs.startTime < :endTime
+               AND cs.endTime > :startTime
+               AND cs.courseId IN (:otherCourseIds)
+             GROUP BY cs.id, cs.title, cs.date, cs.startTime, cs.endTime, cs.status, cs.sessionStatus, cs.courseId, co.courseName
+             HAVING COUNT(css.sessionId) = 0`,
+            {
+              replacements: { date, startTime, endTime, otherCourseIds },
+              type: QueryTypes.SELECT,
+            }
+          );
+
+          // Dedup against already-reported explicit conflicts
+          const alreadyReported = new Set(studentConflicts.map((sc) => `${sc.studentId}-${sc.session.id}`));
+          for (const gs of groupSessions) {
+            const affectedStudentIds = courseStudentMap[gs.courseId] || new Set();
+            for (const sid of affectedStudentIds) {
+              if (!enrolledIdSet.has(sid)) continue; // only students enrolled in the course being scheduled
+              const key = `${sid}-${gs.id}`;
+              if (alreadyReported.has(key)) continue;
+              alreadyReported.add(key);
+              const stu = enrolledStudents.find((s) => s.id === sid);
+              if (stu) {
+                studentConflicts.push({
+                  studentId: stu.id,
+                  studentName: `${stu.firstName} ${stu.lastName}`,
+                  session: {
+                    id: gs.id,
+                    title: gs.title,
+                    date: gs.date,
+                    startTime: gs.startTime,
+                    endTime: gs.endTime,
+                    course: { id: gs.courseId, courseName: gs.courseName },
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return res.json({
+      teacherConflicts,
+      studentConflicts,
+      hasTeacherConflict: teacherConflicts.length > 0,
+      hasStudentConflict: studentConflicts.length > 0,
+    });
+  } catch (err) {
+    console.error('checkConflicts error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
 exports.getTeacherAvailability = async (req, res) => {
   try {
     const { date, startTime, endTime } = req.query;
