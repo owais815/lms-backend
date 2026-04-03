@@ -1299,7 +1299,7 @@ exports.updateSession = async (req, res) => {
 // ---------------------------------------------------------------------------
 exports.getSessionsList = async (req, res) => {
   try {
-    const { startDate, endDate, teacherId, courseId, status, shift, sessionStatus } = req.query;
+    const { startDate, endDate, teacherId, teacherIds, courseId, status, shift, sessionStatus, studentIds } = req.query;
 
     const where = {};
 
@@ -1311,7 +1311,13 @@ exports.getSessionsList = async (req, res) => {
       where.date = { [Op.lte]: endDate };
     }
 
-    if (teacherId) where.teacherId = teacherId;
+    // teacherIds (multi-select, comma-separated) takes precedence over legacy teacherId
+    if (teacherIds) {
+      const ids = teacherIds.split(',').map((id) => Number(id.trim())).filter(Boolean);
+      if (ids.length > 0) where.teacherId = { [Op.in]: ids };
+    } else if (teacherId) {
+      where.teacherId = teacherId;
+    }
     if (courseId) where.courseId = courseId;
     if (status) where.status = status;
     if (shift) where.shift = shift;
@@ -1373,7 +1379,7 @@ exports.getSessionsList = async (req, res) => {
       });
     }
 
-    const result = sessions.map((s) => {
+    let result = sessions.map((s) => {
       // If session has specific students via junction table, use those
       // Otherwise it's a group session — show all enrolled students for the course
       const junctionStudents = s.Students || [];
@@ -1382,6 +1388,16 @@ exports.getSessionsList = async (req, res) => {
         : (enrolledStudentMap[String(s.courseId)] || []);
       return { ...s.toJSON(), students };
     });
+
+    // Post-filter by studentIds (comma-separated) — applied after student resolution
+    if (studentIds) {
+      const sIds = studentIds.split(',').map((id) => Number(id.trim())).filter(Boolean);
+      if (sIds.length > 0) {
+        result = result.filter((s) =>
+          s.students.some((stu) => sIds.includes(Number(stu.id)))
+        );
+      }
+    }
 
     return res.json({ sessions: result });
   } catch (err) {
