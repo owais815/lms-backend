@@ -17,6 +17,9 @@ router.get('/events', isAuth, ctrl.getCalendarEvents);
 // Admin: list ClassSession rows for table view (synced with calendar)
 router.get('/sessions-list', isAuth, checkPermission(PERMISSIONS.SCHEDULE_VIEW), ctrl.getSessionsList);
 
+// Admin: check scheduling conflicts for a teacher + course + date/time
+router.get('/check-conflicts', isAuth, checkPermission(PERMISSIONS.SCHEDULE_VIEW), ctrl.checkConflicts);
+
 // Admin: teacher availability for a given date+time window
 router.get('/teacher-availability', isAuth, checkPermission(PERMISSIONS.SCHEDULE_VIEW), ctrl.getTeacherAvailability);
 
