@@ -183,7 +183,7 @@ exports.getProfileImage = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
-        res.status(200).json({ imageUrl: admin.profileImage });
+        res.status(200).json({ imageUrl: admin.profileImg });
     } catch (err) {
         if (!err.statusCode) err.statusCode = 500;
         next(err);
