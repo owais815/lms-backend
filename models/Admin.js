@@ -20,7 +20,7 @@ const Admin = sequelize.define('Admin', {
         type: Sequelize.STRING,
         allowNull: false
     },
-    profileImage: {
+    profileImg: {
         type: Sequelize.STRING,
         allowNull: true
     }

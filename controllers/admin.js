@@ -161,7 +161,7 @@ exports.uploadProfileImage = async (req, res, next) => {
             throw error;
         }
         const imageUrl = req.file.path.replace('\\', '/');
-        admin.profileImage = imageUrl;
+        admin.profileImg = imageUrl;
         await admin.save();
         res.status(200).json({ message: 'Profile image uploaded successfully.', imageUrl });
     } catch (err) {
@@ -178,7 +178,7 @@ exports.getProfileImage = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
-        if (!admin.profileImage) {
+        if (!admin.profileImg) {
             const error = new Error('No profile image found.');
             error.statusCode = 404;
             throw error;
