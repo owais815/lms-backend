@@ -258,7 +258,7 @@ exports.getAllParents = async (req, res, next) => {
       include: [{
         model: Student,
         as: 'students',
-        attributes: ['id', 'firstName', 'lastName', 'username', 'email', 'status'],
+        attributes: ['id', 'firstName', 'lastName', 'username', 'email', 'status', 'profileImg'],
       }],
     });
     res.status(200).json({ parents });
@@ -291,7 +291,7 @@ exports.getParentById = async (req, res, next) => {
       include: [{
         model: Student,
         as: 'students',
-        attributes: ['id', 'firstName', 'lastName', 'username', 'email', 'status'],
+        attributes: ['id', 'firstName', 'lastName', 'username', 'email', 'status', 'profileImg'],
       }],
     });
     if (!parent) {
