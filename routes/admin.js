@@ -38,8 +38,10 @@ router.post('/login', loginRateLimiter, adminController.login);
 // ─── Protected routes ────────────────────────────────────────────────────────
 
 // Admin profile management
-router.put('/update/:adminId',     isAuth, adminController.update);
-router.delete('/:adminId',         isAuth, adminController.delete);
+router.put('/update/:adminId',          isAuth, adminController.update);
+router.post('/upload-image',            isAuth, adminController.uploadProfileImage);
+router.get('/profileImage/:adminId',    isAuth, adminController.getProfileImage);
+router.delete('/:adminId',              isAuth, adminController.delete);
 router.get('/teachers',            isAuth, adminController.getAllAdmins);
 router.post('/getByUsername',      isAuth, adminController.getAdminByUsername);
 
