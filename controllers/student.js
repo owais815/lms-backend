@@ -494,13 +494,13 @@ exports.getAllStudents = async (req, res, next) => {
         {
           model: Teacher,
           through: { attributes: [] },
-          attributes: ['id', 'firstName', 'lastName'],
+          attributes: ['id', 'firstName', 'lastName', 'imageUrl'],
           required: false,
         },
         {
           model: Parent,
           as: 'Parent',
-          attributes: ['id', 'firstName', 'lastName'],
+          attributes: ['id', 'firstName', 'lastName', 'profileImg'],
           required: false,
         },
         {
