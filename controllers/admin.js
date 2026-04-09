@@ -146,6 +146,50 @@ exports.update = async (req, res, next) => {
         next(err);
     }
 };
+exports.uploadProfileImage = async (req, res, next) => {
+    try {
+        const { adminId } = req.body;
+        if (!req.file) {
+            const error = new Error('No image provided.');
+            error.statusCode = 422;
+            throw error;
+        }
+        const admin = await Admin.findByPk(adminId);
+        if (!admin) {
+            const error = new Error('Admin not found.');
+            error.statusCode = 404;
+            throw error;
+        }
+        const imageUrl = req.file.path.replace('\\', '/');
+        admin.profileImage = imageUrl;
+        await admin.save();
+        res.status(200).json({ message: 'Profile image uploaded successfully.', imageUrl });
+    } catch (err) {
+        if (!err.statusCode) err.statusCode = 500;
+        next(err);
+    }
+};
+
+exports.getProfileImage = async (req, res, next) => {
+    try {
+        const admin = await Admin.findByPk(req.params.adminId);
+        if (!admin) {
+            const error = new Error('Admin not found.');
+            error.statusCode = 404;
+            throw error;
+        }
+        if (!admin.profileImage) {
+            const error = new Error('No profile image found.');
+            error.statusCode = 404;
+            throw error;
+        }
+        res.status(200).json({ imageUrl: admin.profileImage });
+    } catch (err) {
+        if (!err.statusCode) err.statusCode = 500;
+        next(err);
+    }
+};
+
 //delete admin record on Id
 exports.delete = (req, res, next) => {
     const adminId = req.params.adminId; // Get adminId from URL params
