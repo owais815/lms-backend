@@ -120,15 +120,18 @@ const ALLOWED_MIMETYPES = new Set([
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/csv",
+  "application/vnd.ms-excel",
+  "text/plain", // some OS/browsers send CSV as text/plain
 ]);
-const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.jfif', '.heic', '.heif', '.avif', '.pdf', '.ppt', '.pptx', '.doc', '.docx']);
+const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.jfif', '.heic', '.heif', '.avif', '.pdf', '.ppt', '.pptx', '.doc', '.docx', '.csv']);
 
 const fileFilter = (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   if (ALLOWED_MIMETYPES.has(file.mimetype) && ALLOWED_EXTENSIONS.has(ext)) {
     cb(null, true);
   } else {
-    const err = new Error('Invalid file type. Allowed images: PNG, JPG, WEBP, GIF, HEIC. Allowed docs: PDF, Word, PowerPoint.');
+    const err = new Error('Invalid file type. Allowed images: PNG, JPG, WEBP, GIF, HEIC. Allowed docs: PDF, Word, PowerPoint, CSV.');
     err.statusCode = 422;
     cb(err, false);
   }

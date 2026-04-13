@@ -1,4 +1,5 @@
 const { validationResult } = require("express-validator");
+const { parse: parseCSV } = require("csv-parse/sync");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Admin = require("../models/Admin");
@@ -979,4 +980,151 @@ exports.getDashboardStats = async (req, res, next) => {
     if (!err.statusCode) err.statusCode = 500;
     next(err);
   }
+};
+
+// ─── Bulk Import Students ─────────────────────────────────────────────────────
+// POST /api/student/bulk-import
+// Accepts a multipart CSV file (field name: "file").
+// Validates each row, skips bad rows, returns { imported, failed[] }.
+exports.bulkImport = async (req, res, next) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: "No CSV file uploaded." });
+  }
+
+  let rows;
+  try {
+    rows = parseCSV(req.file.buffer || require("fs").readFileSync(req.file.path), {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+    });
+  } catch (parseErr) {
+    return res.status(422).json({ success: false, message: `CSV parse error: ${parseErr.message}` });
+  }
+
+  if (!rows || rows.length === 0) {
+    return res.status(422).json({ success: false, message: "CSV file is empty or has no data rows." });
+  }
+
+  const VALID_SHIFTS         = ["Morning", "Afternoon", "Evening"];
+  const VALID_LABELS         = ["Unassigned", "Trial", "New Enrollment", "Lost", "Struck off"];
+  const VALID_CHANNELS       = ["Meta", "Google", "TikTok", "SEO", "Email", "Reference"];
+  const EMAIL_RE             = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const importedStudents = [];
+  const failed = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2; // +1 for header row, +1 for 1-based index
+
+    // ── Required field validation ───────────────────────────────────────────
+    if (!row.firstName || !row.firstName.trim()) {
+      failed.push({ row: rowNum, reason: "firstName is required." });
+      continue;
+    }
+    if (!row.username || !row.username.trim()) {
+      failed.push({ row: rowNum, reason: "username is required." });
+      continue;
+    }
+    if (!row.password || row.password.trim().length < 6) {
+      failed.push({ row: rowNum, reason: "password is required and must be at least 6 characters." });
+      continue;
+    }
+    if (!row.planId || isNaN(parseInt(row.planId, 10))) {
+      failed.push({ row: rowNum, reason: "planId is required and must be a number." });
+      continue;
+    }
+
+    // ── Optional enum validation ────────────────────────────────────────────
+    if (row.shift && !VALID_SHIFTS.includes(row.shift)) {
+      failed.push({ row: rowNum, reason: `shift must be one of: ${VALID_SHIFTS.join(", ")}.` });
+      continue;
+    }
+    if (row.studentLabel && !VALID_LABELS.includes(row.studentLabel)) {
+      failed.push({ row: rowNum, reason: `studentLabel must be one of: ${VALID_LABELS.join(", ")}.` });
+      continue;
+    }
+    if (row.enrollmentChannel && !VALID_CHANNELS.includes(row.enrollmentChannel)) {
+      failed.push({ row: rowNum, reason: `enrollmentChannel must be one of: ${VALID_CHANNELS.join(", ")}.` });
+      continue;
+    }
+    if (row.email && row.email.trim() && !EMAIL_RE.test(row.email.trim())) {
+      failed.push({ row: rowNum, reason: "email format is invalid." });
+      continue;
+    }
+
+    // ── Username uniqueness check ───────────────────────────────────────────
+    try {
+      const existing = await Student.findOne({ where: { username: row.username.trim() } });
+      if (existing) {
+        failed.push({ row: rowNum, reason: `Username "${row.username.trim()}" already exists.` });
+        continue;
+      }
+    } catch (dbErr) {
+      failed.push({ row: rowNum, reason: `DB error checking username: ${dbErr.message}` });
+      continue;
+    }
+
+    // ── Plan check ─────────────────────────────────────────────────────────
+    let plan;
+    try {
+      plan = await Plan.findByPk(parseInt(row.planId, 10));
+      if (!plan) {
+        failed.push({ row: rowNum, reason: `Plan with id ${row.planId} not found.` });
+        continue;
+      }
+    } catch (dbErr) {
+      failed.push({ row: rowNum, reason: `DB error checking plan: ${dbErr.message}` });
+      continue;
+    }
+
+    // ── Create student ─────────────────────────────────────────────────────
+    try {
+      const hashedPwd = await bcrypt.hash(row.password.trim(), 12);
+      const student = await Student.create({
+        firstName:        row.firstName.trim(),
+        lastName:         row.lastName?.trim() || null,
+        username:         row.username.trim(),
+        password:         hashedPwd,
+        email:            row.email?.trim() || null,
+        contact:          row.contact?.trim() || null,
+        address:          row.address?.trim() || null,
+        dateOfBirth:      row.dateOfBirth?.trim() || null,
+        guardian:         row.guardian?.trim() || null,
+        emergencyContact: row.emergencyContact?.trim() || null,
+        countryName:      row.countryName?.trim() || null,
+        state:            row.state?.trim() || null,
+        city:             row.city?.trim() || null,
+        timeZone:         row.timeZone?.trim() || null,
+        flexibleHours:    row.flexibleHours?.trim() || null,
+        suitableHours:    row.suitableHours?.trim() || null,
+        nameForTeacher:   row.nameForTeacher?.trim() || null,
+        shift:            row.shift?.trim() || null,
+        studentLabel:     row.studentLabel?.trim() || null,
+        struckOffReason:  row.studentLabel?.trim() === "Struck off" ? (row.struckOffReason?.trim() || null) : null,
+        enrollmentChannel: row.enrollmentChannel?.trim() || null,
+        referenceDetails:  row.enrollmentChannel?.trim() === "Reference" ? (row.referenceDetails?.trim() || null) : null,
+        planId:           parseInt(row.planId, 10),
+        parentId:         row.parentId && !isNaN(parseInt(row.parentId, 10)) ? parseInt(row.parentId, 10) : null,
+      });
+
+      // Record payment for plan purchase
+      await Payment.create({
+        studentId: student.id,
+        amount:    plan.price,
+        purpose:   "Plan Purchase",
+      });
+
+      importedStudents.push(student.id);
+    } catch (createErr) {
+      failed.push({ row: rowNum, reason: createErr.message });
+    }
+  }
+
+  return res.status(200).json({
+    success: true,
+    imported: importedStudents.length,
+    failed,
+  });
 };
