@@ -18,7 +18,7 @@ async function enrichWithSenderDetails(messages) {
   const [students, teachers, admins] = await Promise.all([
     studentIds.length ? Student.findAll({ where: { id: studentIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }) : [],
     teacherIds.length ? Teacher.findAll({ where: { id: teacherIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'imageUrl'] }) : [],
-    adminIds.length   ? Admin.findAll({ where: { id: adminIds }, attributes: ['id', 'name', 'username'] }) : [],
+    adminIds.length   ? Admin.findAll({ where: { id: adminIds }, attributes: ['id', 'name', 'username', 'profileImg'] }) : [],
   ]);
 
   const studentMap = Object.fromEntries(students.map(s => [s.id, s.toJSON()]));
@@ -132,7 +132,7 @@ router.get('/recent-chats/:userId/:userType', isAuth, async (req, res) => {
     const [students, teachers, admins, parents] = await Promise.all([
       studentIds.length ? Student.findAll({ where: { id: studentIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }) : [],
       teacherIds.length ? Teacher.findAll({ where: { id: teacherIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'imageUrl'] }) : [],
-      adminIds.length   ? Admin.findAll({ where: { id: adminIds }, attributes: ['id', 'name', 'username'] }) : [],
+      adminIds.length   ? Admin.findAll({ where: { id: adminIds }, attributes: ['id', 'name', 'username', 'profileImg'] }) : [],
       parentIds.length  ? Parent.findAll({ where: { id: parentIds }, attributes: ['id', 'firstName', 'lastName', 'username'] }) : [],
     ]);
 

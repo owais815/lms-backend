@@ -148,7 +148,7 @@ const handleConnection = (socket, io) => {
         });
       } else if (senderType === "admin") {
         senderDetails = await Admin.findByPk(senderId, {
-          attributes: ["id", "name", "username"],
+          attributes: ["id", "name", "username", "profileImg"],
         });
       }
 
@@ -226,7 +226,7 @@ const handleConnection = (socket, io) => {
         });
       } else if (senderType === "admin") {
         senderDetails = await Admin.findByPk(senderId, {
-          attributes: ["id", "name", "username"],
+          attributes: ["id", "name", "username", "profileImg"],
         });
       }
 
@@ -282,7 +282,7 @@ const handleConnection = (socket, io) => {
       } else if (senderType === "teacher") {
         senderDetails = await Teacher.findByPk(senderId, { attributes: ["id", "firstName", "lastName", "username", "imageUrl"] });
       } else if (senderType === "admin") {
-        senderDetails = await Admin.findByPk(senderId, { attributes: ["id", "name", "username"] });
+        senderDetails = await Admin.findByPk(senderId, { attributes: ["id", "name", "username", "profileImg"] });
       }
 
       io.to(`group-${groupId}`).emit("newGroupMessage", {
