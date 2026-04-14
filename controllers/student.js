@@ -1,5 +1,6 @@
 const { validationResult } = require("express-validator");
 const { parse: parseCSV } = require("csv-parse/sync");
+const XLSX = require("xlsx");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Admin = require("../models/Admin");
@@ -1000,26 +1001,45 @@ exports.getDashboardStats = async (req, res, next) => {
 
 // ─── Bulk Import Students ─────────────────────────────────────────────────────
 // POST /api/student/bulk-import
-// Accepts a multipart CSV file (field name: "file").
+// Accepts a multipart .xlsx or .csv file (field name: "file").
+// Reads the "Student Data" sheet for xlsx, the whole file for csv.
 // Validates each row, skips bad rows, returns { imported, failed[] }.
 exports.bulkImport = async (req, res, next) => {
   if (!req.file) {
-    return res.status(400).json({ success: false, message: "No CSV file uploaded." });
+    return res.status(400).json({ success: false, message: "No file uploaded." });
   }
 
+  const ext = require("path").extname(req.file.originalname).toLowerCase();
   let rows;
+
   try {
-    rows = parseCSV(req.file.buffer || require("fs").readFileSync(req.file.path), {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-    });
+    if (ext === ".xlsx") {
+      // ── Parse Excel ──────────────────────────────────────────────────────
+      const workbook = XLSX.readFile(req.file.path);
+
+      // Always read from the "Student Data" sheet (index 1); fall back to first sheet
+      const sheetName = workbook.SheetNames.includes("Student Data")
+        ? "Student Data"
+        : workbook.SheetNames[0];
+
+      const worksheet = workbook.Sheets[sheetName];
+      // { defval: "" } so missing cells come back as empty strings, not undefined
+      rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+    } else {
+      // ── Parse CSV ────────────────────────────────────────────────────────
+      const fileBuffer = req.file.buffer || require("fs").readFileSync(req.file.path);
+      rows = parseCSV(fileBuffer, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      });
+    }
   } catch (parseErr) {
-    return res.status(422).json({ success: false, message: `CSV parse error: ${parseErr.message}` });
+    return res.status(422).json({ success: false, message: `File parse error: ${parseErr.message}` });
   }
 
   if (!rows || rows.length === 0) {
-    return res.status(422).json({ success: false, message: "CSV file is empty or has no data rows." });
+    return res.status(422).json({ success: false, message: "The file is empty or has no data rows." });
   }
 
   const VALID_SHIFTS         = ["Morning", "Afternoon", "Evening"];

@@ -123,8 +123,9 @@ const ALLOWED_MIMETYPES = new Set([
   "text/csv",
   "application/vnd.ms-excel",
   "text/plain", // some OS/browsers send CSV as text/plain
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
 ]);
-const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.jfif', '.heic', '.heif', '.avif', '.pdf', '.ppt', '.pptx', '.doc', '.docx', '.csv']);
+const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.jfif', '.heic', '.heif', '.avif', '.pdf', '.ppt', '.pptx', '.doc', '.docx', '.csv', '.xlsx']);
 
 const fileFilter = (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
