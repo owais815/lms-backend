@@ -109,7 +109,7 @@ exports.getSessionAttendanceSheet = async (req, res, next) => {
     const session = await ClassSession.findByPk(sessionId, {
       include: [
         { model: Courses, attributes: ['id', 'courseName'] },
-        { model: Teacher, attributes: ['id', 'firstName', 'lastName'] }
+        { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'imageUrl'] }
       ]
     });
 
@@ -370,7 +370,7 @@ exports.getAdminStudentAttendance = async (req, res, next) => {
           where: Object.keys(courseDetailsWhere).length > 0 ? courseDetailsWhere : undefined,
           include: [
             { model: Courses, attributes: ['id', 'courseName'] },
-            { model: Teacher, attributes: ['id', 'firstName', 'lastName'] }
+            { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'imageUrl'] }
           ]
         },
         {
