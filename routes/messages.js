@@ -14,23 +14,27 @@ async function enrichWithSenderDetails(messages) {
   const studentIds = [...new Set(messages.filter(m => m.senderType === 'student').map(m => m.senderId))];
   const teacherIds = [...new Set(messages.filter(m => m.senderType === 'teacher').map(m => m.senderId))];
   const adminIds   = [...new Set(messages.filter(m => m.senderType === 'admin').map(m => m.senderId))];
+  const parentIds  = [...new Set(messages.filter(m => m.senderType === 'parent').map(m => m.senderId))];
 
-  const [students, teachers, admins] = await Promise.all([
+  const [students, teachers, admins, parents] = await Promise.all([
     studentIds.length ? Student.findAll({ where: { id: studentIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }) : [],
     teacherIds.length ? Teacher.findAll({ where: { id: teacherIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'imageUrl'] }) : [],
     adminIds.length   ? Admin.findAll({ where: { id: adminIds }, attributes: ['id', 'name', 'username', 'profileImg'] }) : [],
+    parentIds.length  ? Parent.findAll({ where: { id: parentIds }, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] }) : [],
   ]);
 
   const studentMap = Object.fromEntries(students.map(s => [s.id, s.toJSON()]));
   const teacherMap = Object.fromEntries(teachers.map(t => [t.id, t.toJSON()]));
   const adminMap   = Object.fromEntries(admins.map(a => [a.id, a.toJSON()]));
+  const parentMap  = Object.fromEntries(parents.map(p => [p.id, p.toJSON()]));
 
   return messages.map(msg => ({
     ...(msg.toJSON ? msg.toJSON() : msg),
     senderDetails:
       msg.senderType === 'student' ? (studentMap[msg.senderId] ?? null) :
       msg.senderType === 'teacher' ? (teacherMap[msg.senderId] ?? null) :
-      msg.senderType === 'admin'   ? (adminMap[msg.senderId] ?? null) : null,
+      msg.senderType === 'admin'   ? (adminMap[msg.senderId] ?? null) :
+      msg.senderType === 'parent'  ? (parentMap[msg.senderId] ?? null) : null,
   }));
 }
 

@@ -234,6 +234,10 @@ const handleConnection = (socket, io) => {
         senderDetails = await Admin.findByPk(senderId, {
           attributes: ["id", "name", "username", "profileImg"],
         });
+      } else if (senderType === "parent") {
+        senderDetails = await Parent.findByPk(senderId, {
+          attributes: ["id", "firstName", "lastName", "username", "profileImg"],
+        });
       }
 
       const enrichedMsg = { ...savedMessage.toJSON(), senderDetails };
