@@ -127,6 +127,12 @@ const handleConnection = (socket, io) => {
       return;
     }
 
+    // Only admins can post to the Announcements channel
+    if (senderType !== "admin") {
+      socket.emit("chatError", { message: "Only admins can post announcements." });
+      return;
+    }
+
     try {
       const savedMessage = await ChatMessage.create({
         message: message || '',
