@@ -61,8 +61,8 @@ exports.signup = async (req, res, next) => {
     state,
     city,
     timeZone,
-    flexibleHours,
-    suitableHours,
+    classTime,
+    newClassTime,
     nameForTeacher,
     teacherId,
     courseId,
@@ -99,8 +99,8 @@ exports.signup = async (req, res, next) => {
       state,
       city,
       timeZone,
-      flexibleHours,
-      suitableHours,
+      classTime,
+      newClassTime,
       nameForTeacher,
       shift: shift || null,
       enrollmentChannel: enrollmentChannel || null,
@@ -290,8 +290,8 @@ exports.update = async (req, res, next) => {
     state,
     city,
     timeZone,
-    flexibleHours,
-    suitableHours,
+    classTime,
+    newClassTime,
     nameForTeacher,
     teacherId,
     courseId,
@@ -359,11 +359,11 @@ exports.update = async (req, res, next) => {
   if (timeZone) {
     updateFields.timeZone = timeZone;
   }
-  if (flexibleHours) {
-    updateFields.flexibleHours = flexibleHours;
+  if (classTime) {
+    updateFields.classTime = classTime;
   }
-  if (suitableHours) {
-    updateFields.suitableHours = suitableHours;
+  if (newClassTime) {
+    updateFields.newClassTime = newClassTime;
   }
   if (nameForTeacher) {
     updateFields.nameForTeacher = nameForTeacher;
@@ -546,6 +546,9 @@ exports.getAllStudents = async (req, res, next) => {
 
       return {
         ...raw,
+        // Format TIME fields from HH:MM:SS to HH:MM for <input type="time"> compatibility
+        classTime: raw.classTime ? raw.classTime.substring(0, 5) : raw.classTime,
+        newClassTime: raw.newClassTime ? raw.newClassTime.substring(0, 5) : raw.newClassTime,
         plan: raw.Plan || null,
         assignedTeacher: teacher,
         parent: raw.Parent || null,
@@ -593,7 +596,11 @@ exports.getStudentById = (req, res, next) => {
         error.statusCode = 404;
         throw error;
       }
-      res.status(200).json({ student: student });
+      const raw = student.toJSON();
+      // Format TIME fields from HH:MM:SS to HH:MM for <input type="time"> compatibility
+      if (raw.classTime) raw.classTime = raw.classTime.substring(0, 5);
+      if (raw.newClassTime) raw.newClassTime = raw.newClassTime.substring(0, 5);
+      res.status(200).json({ student: raw });
     })
     .catch((err) => {
       if (!err.statusCode) {
@@ -929,17 +936,26 @@ exports.countRecentStudents = (req, res, next) => {
 exports.getMyTeachers = async (req, res, next) => {
   try {
     const { studentId } = req.params;
-    const student = await Student.findByPk(studentId, {
+
+    // Derive teachers from CourseDetails — the same source the detail view uses,
+    // so the list and detail view are always in sync.
+    const courseDetails = await CourseDetails.findAll({
+      where: { studentId },
       include: [{
         model: Teacher,
         attributes: ['id', 'firstName', 'lastName', 'email', 'imageUrl', 'shift'],
-        through: { attributes: [] },
       }],
     });
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found.' });
+
+    // Deduplicate: a teacher may have multiple CourseDetails rows with this student
+    const teacherMap = new Map();
+    for (const cd of courseDetails) {
+      if (cd.Teacher && !teacherMap.has(cd.Teacher.id)) {
+        teacherMap.set(cd.Teacher.id, cd.Teacher);
+      }
     }
-    res.status(200).json({ teachers: student.Teachers || [] });
+
+    res.status(200).json({ teachers: Array.from(teacherMap.values()) });
   } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
     next(err);
@@ -1097,8 +1113,8 @@ exports.bulkImport = async (req, res, next) => {
         state:            row.state?.trim() || null,
         city:             row.city?.trim() || null,
         timeZone:         row.timeZone?.trim() || null,
-        flexibleHours:    row.flexibleHours?.trim() || null,
-        suitableHours:    row.suitableHours?.trim() || null,
+        classTime:    row.classTime?.trim() || null,
+        newClassTime:    row.newClassTime?.trim() || null,
         nameForTeacher:   row.nameForTeacher?.trim() || null,
         shift:            row.shift?.trim() || null,
         studentLabel:     row.studentLabel?.trim() || null,

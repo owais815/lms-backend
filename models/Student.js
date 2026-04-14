@@ -81,11 +81,11 @@ const Student = sequelize.define('Student', {
         type: Sequelize.STRING,
         allowNull: true
     },
-    flexibleHours: {
+    classTime: {
         type: Sequelize.TIME,
         allowNull: true
     },
-    suitableHours: {
+    newClassTime: {
         type: Sequelize.TIME,
         allowNull: true
     },

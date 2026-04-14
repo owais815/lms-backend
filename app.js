@@ -267,6 +267,11 @@ async function patchEnumColumns() {
     `ALTER TABLE Students ADD COLUMN struckOffReason VARCHAR(500) DEFAULT NULL`,
     `ALTER TABLE Students ADD COLUMN enrollmentChannel ENUM('Meta','Google','TikTok','SEO','Email','Reference') DEFAULT NULL`,
     `ALTER TABLE Students ADD COLUMN referenceDetails VARCHAR(500) DEFAULT NULL`,
+    // Rename flexibleHours → classTime, suitableHours → newClassTime (copy data then drop old columns)
+    `UPDATE Students SET classTime = flexibleHours WHERE flexibleHours IS NOT NULL AND classTime IS NULL`,
+    `UPDATE Students SET newClassTime = suitableHours WHERE suitableHours IS NOT NULL AND newClassTime IS NULL`,
+    `ALTER TABLE Students DROP COLUMN flexibleHours`,
+    `ALTER TABLE Students DROP COLUMN suitableHours`,
   ];
   for (const sql of patches) {
     try {
