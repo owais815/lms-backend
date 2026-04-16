@@ -44,7 +44,7 @@ exports.getAllPlanChangeRequests = async (req, res) => {
     try {
         const requests = await PlanChangeRequest.findAll({
             include: [
-                { model: Student, attributes: ['id', 'firstName', 'lastName', 'username'] },
+                { model: Student, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] },
                 { model: Plan, as: 'CurrentPlan', attributes: ['name', 'price'] },
                 { model: Plan, as: 'RequestedPlan', attributes: ['name', 'price'] },
                 {

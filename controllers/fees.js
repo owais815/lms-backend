@@ -10,7 +10,7 @@ const Admin = require('../models/Admin');
 const feeWithRelations = (id) =>
     Fee.findByPk(id, {
         include: [
-            { model: Student, attributes: ['id', 'firstName', 'lastName', 'username'] },
+            { model: Student, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] },
             { model: Plan, attributes: ['id', 'name', 'price', 'billingCycle'] },
             { model: PlanChangeRequest, as: 'planChangeRequest', attributes: ['id', 'status', 'requestedPlanId', 'studentId'] },
             { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
@@ -27,7 +27,7 @@ exports.getAllFees = async (req, res) => {
         const fees = await Fee.findAll({
             where,
             include: [
-                { model: Student, attributes: ['id', 'firstName', 'lastName', 'username'] },
+                { model: Student, attributes: ['id', 'firstName', 'lastName', 'username', 'profileImg'] },
                 { model: Plan, attributes: ['id', 'name', 'price', 'billingCycle'] },
                 { model: PlanChangeRequest, as: 'planChangeRequest', attributes: ['id', 'status', 'requestedPlanId'] },
                 { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
