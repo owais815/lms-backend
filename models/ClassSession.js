@@ -98,6 +98,22 @@ const ClassSession = sequelize.define('ClassSession', {
     allowNull: true,
     defaultValue: null,
   },
+  // Today's Lesson — filled by teacher when ending a session
+  lessonTitle: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: null,
+  },
+  lessonDescription: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    defaultValue: null,
+  },
+  lessonDueDate: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+    defaultValue: null,
+  },
 }, {
   tableName: 'ClassSessions',
   timestamps: true,

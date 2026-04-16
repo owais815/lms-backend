@@ -596,6 +596,9 @@ function formatSessionEvent(session, scheduleStatus, teacher, course, students, 
         : students && students.length > 1 ? `${students.length} students` : null,
       cancellationReason: session.cancellationReason || null,
       shift: session.shift || null,
+      lessonTitle: session.lessonTitle || null,
+      lessonDescription: session.lessonDescription || null,
+      lessonDueDate: session.lessonDueDate || null,
     },
   };
 }
@@ -1106,7 +1109,7 @@ exports.startSession = async (req, res) => {
 exports.endSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { userId, role } = req.body;
+    const { userId, role, lessonTitle, lessonDescription, lessonDueDate } = req.body;
 
     if (!userId || !role) {
       return res.status(400).json({ message: 'userId and role are required' });
@@ -1128,7 +1131,12 @@ exports.endSession = async (req, res) => {
     }
 
     // Mark both sessionStatus=ended AND status=completed so attendance/reporting works
-    await session.update({ sessionStatus: 'ended', status: 'completed' });
+    // Also save the teacher's lesson note if provided
+    const updateData = { sessionStatus: 'ended', status: 'completed' };
+    if (lessonTitle !== undefined) updateData.lessonTitle = lessonTitle || null;
+    if (lessonDescription !== undefined) updateData.lessonDescription = lessonDescription || null;
+    if (lessonDueDate !== undefined) updateData.lessonDueDate = lessonDueDate || null;
+    await session.update(updateData);
 
     try {
       const ioPromise = socket.getIO();
@@ -1137,6 +1145,9 @@ exports.endSession = async (req, res) => {
         io.to(`session-${sessionId}`).emit('session:ended', {
           sessionId: Number(sessionId),
           title: session.title,
+          lessonTitle: lessonTitle || null,
+          lessonDescription: lessonDescription || null,
+          lessonDueDate: lessonDueDate || null,
         });
       }
     } catch (socketErr) {
@@ -1146,6 +1157,116 @@ exports.endSession = async (req, res) => {
     return res.json({ message: 'Session ended', sessionStatus: 'ended', status: 'completed' });
   } catch (err) {
     console.error('endSession error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// PATCH /api/class-schedule/sessions/:sessionId/lesson
+// Teacher (or admin) can update lesson note on an ended/completed session.
+// ---------------------------------------------------------------------------
+exports.updateLesson = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { userId, role, lessonTitle, lessonDescription, lessonDueDate } = req.body;
+
+    if (!userId || !role) {
+      return res.status(400).json({ message: 'userId and role are required' });
+    }
+
+    const jwtRole = (req.userType || '').toLowerCase();
+    if (role !== jwtRole) {
+      return res.status(403).json({ message: 'Role mismatch' });
+    }
+    if (role !== 'teacher' && role !== 'admin') {
+      return res.status(403).json({ message: 'Only teachers and admins can update lesson notes' });
+    }
+
+    const session = await ClassSession.findByPk(sessionId);
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+    if (role === 'teacher' && String(session.teacherId) !== String(userId)) {
+      return res.status(403).json({ message: 'Not authorized for this session' });
+    }
+
+    await session.update({
+      lessonTitle: lessonTitle !== undefined ? (lessonTitle || null) : session.lessonTitle,
+      lessonDescription: lessonDescription !== undefined ? (lessonDescription || null) : session.lessonDescription,
+      lessonDueDate: lessonDueDate !== undefined ? (lessonDueDate || null) : session.lessonDueDate,
+    });
+
+    return res.json({
+      message: 'Lesson note updated',
+      lessonTitle: session.lessonTitle,
+      lessonDescription: session.lessonDescription,
+      lessonDueDate: session.lessonDueDate,
+    });
+  } catch (err) {
+    console.error('updateLesson error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/class-schedule/lessons?userId=&role=
+// Returns ended/completed sessions that have a lessonTitle, for lesson history pages.
+// ---------------------------------------------------------------------------
+exports.fetchLessons = async (req, res) => {
+  try {
+    const { userId, role } = req.query;
+    if (!userId || !role) {
+      return res.status(400).json({ message: 'userId and role are required' });
+    }
+
+    let where = {
+      lessonTitle: { [Op.ne]: null },
+      [Op.or]: [{ status: 'completed' }, { sessionStatus: 'ended' }],
+    };
+
+    // For student: sessions they were enrolled in (via junction table or legacy studentId)
+    if (role === 'student') {
+      const junctionRows = await ClassSessionStudent.findAll({ where: { studentId: userId }, attributes: ['sessionId'] });
+      const sessionIds = junctionRows.map((r) => r.sessionId);
+      where = {
+        [Op.and]: [
+          { lessonTitle: { [Op.ne]: null } },
+          { [Op.or]: [{ status: 'completed' }, { sessionStatus: 'ended' }] },
+          sessionIds.length > 0
+            ? { [Op.or]: [{ studentId: userId }, { id: { [Op.in]: sessionIds } }] }
+            : { studentId: userId },
+        ],
+      };
+    } else if (role === 'teacher') {
+      where.teacherId = userId;
+    }
+    // admin: no additional filter — returns all sessions with lesson notes
+
+    const sessions = await ClassSession.findAll({
+      where,
+      include: [
+        { model: Teacher, as: 'Teacher', attributes: ['id', 'firstName', 'lastName'] },
+        { model: Courses, as: 'Course', attributes: ['id', 'courseName'] },
+      ],
+      order: [['date', 'DESC'], ['startTime', 'DESC']],
+      limit: 100,
+    });
+
+    const lessons = sessions.map((s) => ({
+      sessionId: s.id,
+      sessionTitle: s.title,
+      sessionDate: s.date,
+      startTime: s.startTime,
+      lessonTitle: s.lessonTitle,
+      lessonDescription: s.lessonDescription,
+      lessonDueDate: s.lessonDueDate,
+      courseName: s.Course ? s.Course.courseName : null,
+      courseId: s.courseId,
+      teacherName: s.Teacher ? `${s.Teacher.firstName} ${s.Teacher.lastName}` : null,
+      teacherId: s.teacherId,
+    }));
+
+    return res.json({ lessons });
+  } catch (err) {
+    console.error('fetchLessons error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };

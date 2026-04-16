@@ -51,6 +51,12 @@ router.post('/sessions/:sessionId/join', isAuth, ctrl.joinSession);
 router.post('/sessions/:sessionId/start', isAuth, ctrl.startSession);
 router.post('/sessions/:sessionId/end', isAuth, ctrl.endSession);
 
+// Lesson notes — teacher/admin can update lesson after session ends
+router.patch('/sessions/:sessionId/lesson', isAuth, ctrl.updateLesson);
+
+// Lesson history — list ended sessions with lesson notes for a user
+router.get('/lessons', isAuth, ctrl.fetchLessons);
+
 // Whisper transcript — save called server-to-server by calling-app (no isAuth, uses x-calling-secret)
 router.post('/sessions/:sessionId/transcript', ctrl.saveTranscript);
 // Get transcript — accessible to authenticated users
