@@ -5,7 +5,7 @@ const Courses = require('../models/Course');
 
 // Shared include for full certificate details
 const fullInclude = [
-    { model: Student, attributes: ['id', 'firstName', 'lastName', 'email'] },
+    { model: Student, attributes: ['id', 'firstName', 'lastName', 'email', 'profileImg'] },
     { model: Courses, attributes: ['id', 'courseName', 'duration'] },
 ];
 
