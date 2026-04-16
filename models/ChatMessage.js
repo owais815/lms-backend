@@ -43,6 +43,10 @@ const ChatMessage = sequelize.define("ChatMessage", {
     type: Sequelize.FLOAT,
     allowNull: true,
   },
+  isRead: {
+    type: Sequelize.BOOLEAN,
+    defaultValue: false,
+  },
   preDeletionNotified: {
     type: Sequelize.BOOLEAN,
     defaultValue: false,

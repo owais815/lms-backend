@@ -235,4 +235,58 @@ router.get('/users', isAuth, async (req, res) => {
   }
 });
 
+// GET /api/chat/unread-counts?userId=&userType=
+// Returns { counts: { "teacher-5": 3, "admin-1": 1, ... } }
+router.get('/unread-counts', isAuth, async (req, res) => {
+  try {
+    const { userId, userType } = req.query;
+    if (!userId || !userType) return res.status(400).json({ message: 'userId and userType required' });
+
+    const messages = await ChatMessage.findAll({
+      where: {
+        receiverId: userId,
+        receiverType: userType,
+        isPrivate: true,
+        isRead: false,
+      },
+      attributes: ['senderId', 'senderType'],
+    });
+
+    const counts = {};
+    messages.forEach(({ senderId, senderType }) => {
+      const key = `${senderType}-${senderId}`;
+      counts[key] = (counts[key] ?? 0) + 1;
+    });
+
+    res.json({ counts });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/chat/mark-read
+// Body: { userId, userType, senderId, senderType }
+// Marks all private messages from that sender to this user as read
+router.post('/mark-read', isAuth, async (req, res) => {
+  try {
+    const { userId, userType, senderId, senderType } = req.body;
+    await ChatMessage.update(
+      { isRead: true },
+      {
+        where: {
+          receiverId: userId,
+          receiverType: userType,
+          senderId,
+          senderType,
+          isPrivate: true,
+          isRead: false,
+        },
+      }
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
