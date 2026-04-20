@@ -23,6 +23,10 @@ const Notification = sequelize.define("Notification", {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  priority: {
+    type: DataTypes.ENUM('critical', 'warning', 'info'),
+    defaultValue: 'info',
+  },
 });
 
 module.exports = Notification;

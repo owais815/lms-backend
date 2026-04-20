@@ -43,6 +43,8 @@ const { startMessageCleanup } = require('./Schedular/cleanupMessages');
 const { startOverdueFeesCron } = require('./Schedular/markOverdueFees');
 const { startAutoEndSessionsCron } = require('./Schedular/autoEndSessions');
 const { startOverdueSalariesCron } = require('./Schedular/markOverdueSalaries');
+const { startTeacherNoShowCron } = require('./Schedular/teacherNoShow');
+const { startStaleApprovalsCron } = require('./Schedular/staleApprovals');
 const isAuth = require('./middleware/is-auth');
 
 // Choose the environment
@@ -303,6 +305,8 @@ sequelize
     startOverdueFeesCron();
     startAutoEndSessionsCron();
     startOverdueSalariesCron();
+    startTeacherNoShowCron();
+    startStaleApprovalsCron();
 
     console.log(`[app] Server started in ${env} mode.`);
   })

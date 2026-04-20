@@ -20,6 +20,7 @@ const ClassSession = require('../models/ClassSession');
 const callingAppService = require('../services/callingAppService');
 const socket = require('../socket');
 const notify = require('../utils/notify');
+const notifyAdmins = require('../utils/notifyAdmins');
 const CourseDetails = require('../models/CourseDetails');
 
 const GRACE_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
@@ -97,6 +98,13 @@ async function autoEndEmptySessions() {
       } catch (socketErr) {
         console.warn('[autoEndSessions] Socket emit error (non-fatal):', socketErr.message);
       }
+
+      // Notify admins that a session was auto-ended (non-fatal)
+      notifyAdmins({
+        title: 'Session Auto-Ended',
+        message: `Session "${session.title}" was automatically ended — all participants left without closing the session.`,
+        priority: 'warning',
+      }).catch(() => {});
 
       // Notify enrolled students (non-fatal)
       try {

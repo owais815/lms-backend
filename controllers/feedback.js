@@ -4,6 +4,7 @@ const ClassSession = require('../models/ClassSession');
 const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
 const Courses = require('../models/Course');
+const notifyAdmins = require('../utils/notifyAdmins');
 
 // ---------------------------------------------------------------------------
 // Helper: compute average ratings from an array of SessionFeedback instances
@@ -54,6 +55,15 @@ const submitFeedback = async (req, res) => {
       overallRating,
       comment: comment || null,
     });
+
+    // Alert admins if overall rating is critically low
+    if (Number(overallRating) <= 2) {
+      notifyAdmins({
+        title: 'Low Session Rating Alert',
+        message: `A student rated session "${session.title}" only ${overallRating}/5. This may need your attention.`,
+        priority: 'warning',
+      }).catch(() => {});
+    }
 
     res.status(201).json({ message: 'Feedback submitted successfully', feedback });
   } catch (err) {

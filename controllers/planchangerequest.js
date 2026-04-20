@@ -3,6 +3,7 @@ const Plan = require('../models/Plan');
 const PlanChangeRequest = require('../models/PlanChangeRequest');
 const Student = require('../models/Student');
 const Fee = require('../models/Fee');
+const notifyAdmins = require('../utils/notifyAdmins');
 
 // ── Student: Submit a plan change request ────────────────────────────────────
 
@@ -31,6 +32,14 @@ exports.requestPlanChange = async (req, res) => {
             currentPlanId: student.planId,
             requestedPlanId,
         });
+
+        const studentName = `${student.firstName || ''} ${student.lastName || ''}`.trim() || `Student #${studentId}`;
+        const requestedPlan = await Plan.findByPk(requestedPlanId, { attributes: ['name'] });
+        notifyAdmins({
+            title: 'Plan Upgrade Request',
+            message: `${studentName} has requested a plan upgrade${requestedPlan ? ` to "${requestedPlan.name}"` : ''}. Please review the Fees section.`,
+            priority: 'info',
+        }).catch(() => {});
 
         res.status(201).json({ success: true, message: 'Plan change request submitted.', request });
     } catch (error) {

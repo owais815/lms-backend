@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const Certificate = require('../models/Certificate');
 const Student = require('../models/Student');
 const Courses = require('../models/Course');
+const notifyAdmins = require('../utils/notifyAdmins');
 
 // Shared include for full certificate details
 const fullInclude = [
@@ -170,6 +171,13 @@ const revokeCertificate = async (req, res) => {
 
         cert.status = 'revoked';
         await cert.save();
+
+        // Audit: notify all admins when a certificate is revoked
+        notifyAdmins({
+            title: 'Certificate Revoked',
+            message: `Certificate #${cert.id} for Student #${cert.studentId} (Course #${cert.courseId}) was revoked. Performed by admin.`,
+            priority: 'warning',
+        }).catch(() => {});
 
         res.json({ message: 'Certificate revoked.' });
     } catch (err) {

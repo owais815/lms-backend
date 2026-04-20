@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { Op } = require('sequelize');
 const Fee = require('../models/Fee');
+const notifyAdmins = require('../utils/notifyAdmins');
 
 /**
  * Start the daily overdue-fees cron job.
@@ -25,6 +26,11 @@ function startOverdueFeesCron() {
 
             if (count > 0) {
                 console.log(`[markOverdueFees] Marked ${count} fee(s) as overdue.`);
+                await notifyAdmins({
+                    title: 'Fees Gone Overdue',
+                    message: `${count} student fee${count > 1 ? 's have' : ' has'} passed their due date and been marked overdue. Review the Fees section.`,
+                    priority: 'warning',
+                });
             }
         } catch (error) {
             console.error('[markOverdueFees] Error during overdue check:', error);

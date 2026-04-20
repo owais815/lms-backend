@@ -6,9 +6,9 @@ const { onlineUsers } = require("../SocketMethods/HandleConnection");
  * Create a notification record and emit it in real-time if the user is online.
  * @param {{ userId: number|string, userType: string, title: string, message: string }} opts
  */
-const notify = async ({ userId, userType, title, message }) => {
+const notify = async ({ userId, userType, title, message, priority = 'info' }) => {
   try {
-    const record = await Notification.create({ userId, userType, title, message });
+    const record = await Notification.create({ userId, userType, title, message, priority });
     let io;
     try { io = await getIO(); } catch { /* socket not ready */ }
     if (io) {

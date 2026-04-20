@@ -31,6 +31,7 @@ const Attendance = require("../models/Attendance");
 const MyBookmark = require("../models/Bookmarks/MyBookmark");
 const AdminFeedback = require("../models/AdminFeedback/AdminFeedback");
 const MakeUpClass = require("../models/MakeupClasses/MakeUpClass");
+const notifyAdmins = require('../utils/notifyAdmins');
 
 exports.signup= (req,res,next)=>{
     const errors = validationResult(req);
@@ -1099,6 +1100,14 @@ exports.assignRightsToRole = async (req, res) => {
         // Assign new rights
         const rightsData = rights.map(right => ({ roleId, rights:right }));
         await RolesRights.bulkCreate(rightsData);
+
+        // Security audit: notify super admins when any role's permissions change
+        notifyAdmins({
+            title: 'Role Permissions Changed',
+            message: `Permissions for role "${roleExists.name}" were updated (${rights.length} permissions assigned). Review in Roles & Permissions.`,
+            priority: 'critical',
+            superAdminOnly: true,
+        }).catch(() => {});
 
         res.status(201).json({ message: "Rights assigned successfully" });
     } catch (error) {
