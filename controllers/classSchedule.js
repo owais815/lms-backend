@@ -1420,7 +1420,7 @@ exports.updateSession = async (req, res) => {
 // ---------------------------------------------------------------------------
 exports.getSessionsList = async (req, res) => {
   try {
-    const { startDate, endDate, teacherId, teacherIds, courseId, status, shift, sessionStatus, studentIds } = req.query;
+    const { startDate, endDate, teacherId, teacherIds, courseId, status, shift, sessionStatus, studentIds, limit, sortDir } = req.query;
 
     const where = {};
 
@@ -1475,8 +1475,8 @@ exports.getSessionsList = async (req, res) => {
         },
       ],
       order: [
-        ['date', 'ASC'],
-        ['startTime', 'ASC'],
+        ['date', sortDir === 'desc' ? 'DESC' : 'ASC'],
+        ['startTime', sortDir === 'desc' ? 'DESC' : 'ASC'],
       ],
     });
 
@@ -1518,6 +1518,10 @@ exports.getSessionsList = async (req, res) => {
           s.students.some((stu) => sIds.includes(Number(stu.id)))
         );
       }
+    }
+
+    if (limit) {
+      result = result.slice(0, Number(limit));
     }
 
     return res.json({ sessions: result });
