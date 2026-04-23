@@ -20,9 +20,17 @@ const feeWithRelations = (id) =>
 // GET /api/fees — Admin: all fees (filterable by ?status=&studentId=)
 exports.getAllFees = async (req, res) => {
     try {
+        const { Op: SeqOp, fn, col, literal } = require('sequelize');
         const where = {};
         if (req.query.status) where.status = req.query.status;
         if (req.query.studentId) where.studentId = req.query.studentId;
+        if (req.query.month) {
+            const m = parseInt(req.query.month);
+            const year = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
+            const start = new Date(year, m - 1, 1);
+            const end   = new Date(year, m, 1);
+            where.paidDate = { [Op.gte]: start, [Op.lt]: end };
+        }
         const limit = req.query.limit ? parseInt(req.query.limit) : undefined;
 
         const fees = await Fee.findAll({
