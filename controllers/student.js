@@ -1004,6 +1004,24 @@ exports.getDashboardStats = async (req, res, next) => {
 // Accepts a multipart .xlsx or .csv file (field name: "file").
 // Reads the "Student Data" sheet for xlsx, the whole file for csv.
 // Validates each row, skips bad rows, returns { imported, failed[] }.
+exports.countryStats = async (req, res, next) => {
+  try {
+    const rows = await Student.findAll({
+      attributes: [
+        'countryName',
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'],
+      ],
+      where: { countryName: { [Op.not]: null, [Op.ne]: '' } },
+      group: ['countryName'],
+      order: [[Sequelize.literal('count'), 'DESC']],
+      raw: true,
+    });
+    return res.json({ countries: rows.map(r => ({ country: r.countryName, count: Number(r.count) })) });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.bulkImport = async (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: "No file uploaded." });
