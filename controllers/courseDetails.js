@@ -393,3 +393,29 @@ exports.getStudentsByCourse = (req, res, next) => {
             next(err);
         });
   };
+
+exports.topCoursesByEnrollment = async (req, res, next) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    const rows = await CourseDetails.findAll({
+      attributes: [
+        'courseId',
+        [Sequelize.fn('COUNT', Sequelize.col('CourseDetails.studentId')), 'enrollmentCount'],
+      ],
+      include: [{ model: Courses, attributes: ['courseName'] }],
+      group: ['courseId', 'Course.id'],
+      order: [[Sequelize.literal('enrollmentCount'), 'DESC']],
+      limit,
+      raw: true,
+      nest: true,
+    });
+    const courses = rows.map(r => ({
+      name: r.Course.courseName,
+      count: Number(r.enrollmentCount),
+    }));
+    return res.json({ courses });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};

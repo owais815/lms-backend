@@ -29,5 +29,6 @@ router.get('/getCourseByTeacherId/:teacherId',                isAuth, courseCont
 router.get('/getCourses',                                     isAuth, courseController.getCourses);
 router.get('/getUniqueCourses',                               isAuth, courseController.getUniqueCourses);
 router.get('/students-by-course/:courseId',                   isAuth, courseController.getStudentsByCourse);
+router.get('/top-by-enrollment',                              isAuth, checkPermission(PERMISSIONS.COURSES_VIEW), courseController.topCoursesByEnrollment);
 
 module.exports = router;
