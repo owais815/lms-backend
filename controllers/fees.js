@@ -23,6 +23,7 @@ exports.getAllFees = async (req, res) => {
         const where = {};
         if (req.query.status) where.status = req.query.status;
         if (req.query.studentId) where.studentId = req.query.studentId;
+        const limit = req.query.limit ? parseInt(req.query.limit) : undefined;
 
         const fees = await Fee.findAll({
             where,
@@ -33,6 +34,7 @@ exports.getAllFees = async (req, res) => {
                 { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
             ],
             order: [['createdAt', 'DESC']],
+            ...(limit ? { limit } : {}),
         });
         res.json({ fees });
     } catch (error) {
