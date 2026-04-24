@@ -1182,3 +1182,38 @@ exports.bulkImport = async (req, res, next) => {
     failed,
   });
 };
+
+exports.topStudents = async (req, res, next) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    const { QueryTypes } = require('sequelize');
+    const rows = await sequelize.query(
+      `SELECT
+         s.id,
+         s.firstName,
+         s.lastName,
+         s.profileImg,
+         COALESCE(SUM(CASE WHEN f.status = 'paid' THEN f.amount ELSE 0 END), 0) AS totalPaid,
+         COUNT(DISTINCT cd.id) AS courseCount
+       FROM Students s
+       LEFT JOIN Fees f ON f.studentId = s.id
+       LEFT JOIN CourseDetails cd ON cd.studentId = s.id
+       GROUP BY s.id, s.firstName, s.lastName, s.profileImg
+       ORDER BY totalPaid DESC
+       LIMIT :limit`,
+      { replacements: { limit }, type: QueryTypes.SELECT }
+    );
+    const students = rows.map(r => ({
+      id:          r.id,
+      firstName:   r.firstName,
+      lastName:    r.lastName,
+      profileImg:  r.profileImg,
+      totalPaid:   Number(r.totalPaid),
+      courseCount: Number(r.courseCount),
+    }));
+    return res.json({ students });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};

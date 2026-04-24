@@ -37,6 +37,7 @@ const feesRoutes = require("./routes/fees");
 const faqRoutes = require("./routes/faq");
 const certificateRoutes = require("./routes/certificate");
 const salaryRoutes = require("./routes/salary");
+const expenseRoutes = require("./routes/expense");
 
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
@@ -205,6 +206,7 @@ app.use("/api/fees", feesRoutes);
 app.use("/api/faq", faqRoutes);
 app.use("/api/certificates", certificateRoutes);
 app.use("/api/salary", salaryRoutes);
+app.use("/api/expenses", expenseRoutes);
 
 // ── Global error handler ─────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
@@ -268,6 +270,9 @@ async function patchEnumColumns() {
     `ALTER TABLE Salaries MODIFY COLUMN status ENUM('paid','unpaid','partial','overdue') NOT NULL DEFAULT 'unpaid'`,
     `ALTER TABLE Students ADD COLUMN studentLabel ENUM('Unassigned','Trial','New Enrollment','Lost','Struck off') DEFAULT NULL`,
     `ALTER TABLE Students ADD COLUMN struckOffReason VARCHAR(500) DEFAULT NULL`,
+    `ALTER TABLE Expenses ADD COLUMN status ENUM('New','Pending','Approved','Rejected') NOT NULL DEFAULT 'New'`,
+    `ALTER TABLE Expenses ADD COLUMN paymentMethod ENUM('Cash','Bank Transfer','Credit Card','Debit Card','Cheque','Other') DEFAULT 'Cash'`,
+    `ALTER TABLE ExpenseCategories ADD COLUMN status ENUM('Active','Inactive') NOT NULL DEFAULT 'Active'`,
     `ALTER TABLE Students ADD COLUMN enrollmentChannel ENUM('Meta','Google','TikTok','SEO','Email','Reference') DEFAULT NULL`,
     `ALTER TABLE Students ADD COLUMN referenceDetails VARCHAR(500) DEFAULT NULL`,
     // Rename flexibleHours → classTime, suitableHours → newClassTime (copy data then drop old columns)
