@@ -38,7 +38,8 @@ router.get('/getAll',                  isAuth, checkPermission(PERMISSIONS.STUDE
 router.post('/bulk-import',            isAuth, checkPermission(PERMISSIONS.STUDENTS_CREATE),  studentController.bulkImport);
 router.patch('/:studentId/status',     isAuth, checkPermission(PERMISSIONS.STUDENTS_EDIT),   studentController.toggleStatus);
 router.get('/count',         isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW),   studentController.countAllStudents);
-router.get('/country-stats', isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW),   studentController.countryStats);
+router.get('/country-stats',      isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW), studentController.countryStats);
+router.get('/grade-distribution', isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW), studentController.gradeDistribution);
 router.get('/top-students',  isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW),   studentController.topStudents);
 router.get('/recentCount',   isAuth, checkPermission(PERMISSIONS.STUDENTS_VIEW),   studentController.countRecentStudents);
 router.delete('/:studentId', isAuth, checkPermission(PERMISSIONS.STUDENTS_DELETE), studentController.delete);

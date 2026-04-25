@@ -117,6 +117,11 @@ const Student = sequelize.define('Student', {
         type: Sequelize.STRING,
         allowNull: true
     },
+    grade: {
+        type: Sequelize.STRING,
+        allowNull: true,
+        defaultValue: null
+    },
     // FK to Parent — one parent can have many students
     parentId: {
         type: Sequelize.INTEGER,

@@ -1022,6 +1022,23 @@ exports.countryStats = async (req, res, next) => {
   }
 };
 
+exports.gradeDistribution = async (req, res, next) => {
+  try {
+    const rows = await Student.findAll({
+      attributes: [
+        [Sequelize.fn('COALESCE', Sequelize.col('grade'), 'Unassigned'), 'grade'],
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'],
+      ],
+      group: [Sequelize.fn('COALESCE', Sequelize.col('grade'), 'Unassigned')],
+      order: [[Sequelize.literal('count'), 'DESC']],
+      raw: true,
+    });
+    return res.json({ grades: rows.map(r => ({ grade: r.grade, count: Number(r.count) })) });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.bulkImport = async (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: "No file uploaded." });
