@@ -20,6 +20,12 @@ router.post('/revenue/date-range', isAuth, checkPermission(PERMISSIONS.FINANCE_V
 // Add monthly fee (admin/finance only)
 router.post('/add-monthly-fee', isAuth, checkPermission(PERMISSIONS.FINANCE_MANAGE), paymentController.addMonthlyFee);
 
+// Individual payment records for a date range (for weekly grouping)
+router.get('/records', isAuth, checkPermission(PERMISSIONS.FINANCE_VIEW), paymentController.getPaymentRecords);
+
+// Monthly revenue breakdown (year + optional month query params)
+router.get('/monthly-breakdown', isAuth, checkPermission(PERMISSIONS.FINANCE_VIEW), paymentController.getMonthlyBreakdown);
+
 // Admin: Get all payments
 router.get('/payments', isAuth, checkPermission(PERMISSIONS.FINANCE_VIEW), paymentController.getAllPayments);
 

@@ -123,6 +123,55 @@ exports.addMonthlyFee = async (req, res) => {
     }
 };
 
+// Individual payment records for a date range (used for weekly grouping)
+exports.getPaymentRecords = async (req, res) => {
+    const { startDate, endDate } = req.query;
+    try {
+        const where = {};
+        if (startDate && endDate) {
+            where.paymentDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+        }
+        const payments = await Payment.findAll({
+            where,
+            attributes: ['amount', 'paymentDate'],
+            order: [['paymentDate', 'ASC']],
+        });
+        res.json({ success: true, payments });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Monthly revenue breakdown — returns 12 rows {month, revenue} for the given year
+exports.getMonthlyBreakdown = async (req, res) => {
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const month = req.query.month ? parseInt(req.query.month) : null; // 1-12, optional filter
+
+    try {
+        const startOfYear = new Date(year, 0, 1);
+        const endOfYear   = new Date(year, 11, 31, 23, 59, 59);
+
+        const payments = await Payment.findAll({
+            where: {
+                paymentDate: { [Op.between]: [startOfYear, endOfYear] },
+            },
+            attributes: ['amount', 'paymentDate'],
+        });
+
+        // Group into 12 buckets
+        const monthly = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, revenue: 0 }));
+        payments.forEach((p) => {
+            const m = new Date(p.paymentDate).getMonth(); // 0-based
+            monthly[m].revenue += parseFloat(p.amount || 0);
+        });
+
+        const result = month ? monthly.filter((r) => r.month === month) : monthly;
+        res.json({ success: true, year, monthly: result });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 //get all payments history admin
 exports.getAllPayments = async (req, res) => {
     try {
