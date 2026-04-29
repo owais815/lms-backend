@@ -3,8 +3,9 @@ const http = require('http');
 
 exports.startServer = (app) => {
     try {
-        const server = http.createServer(app).listen(8080, () => {
-            console.log('[dev] HTTP server running on port 8080');
+        const port = process.env.HTTP_PORT || 8080;
+        const server = http.createServer(app).listen(port, () => {
+            console.log(`[dev] HTTP server running on port ${port}`);
         });
 
         // Initialize Socket.IO on the server.
