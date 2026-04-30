@@ -1,0 +1,83 @@
+name: Deploy Backend (dev) to VPS
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend-dev.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            DEPLOY_DIR=/var/www/lms-backend-dev
+
+            # ── Ensure deploy dir exists and is a git repo ───────────────────
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              git clone ${{ secrets.LMS_REPO_URL }} "$DEPLOY_DIR"
+            fi
+
+            cd "$DEPLOY_DIR"
+
+            # ── Write .env from GitHub Secrets ───────────────────────────────
+            cat > .env << 'ENVEOF'
+            NODE_ENV=development
+
+            # JWT
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+
+            # Database (separate dev DB)
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_NAME=${{ secrets.DB_NAME_DEV }}
+            DB_USER=${{ secrets.DB_USER }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+            # CORS
+            CORS_ORIGIN_DEV=${{ secrets.CORS_ORIGIN_DEV }}
+            CORS_ORIGIN_PROD=${{ secrets.CORS_ORIGIN_PROD }}
+
+            # Port (plain HTTP — no SSL on dev)
+            HTTP_PORT=8082
+
+            # Admin creation
+            ALLOW_AUTO_ADMIN_CREATION=false
+
+            # Calling App (MiroTalk SFU — dev instance)
+            CALLING_APP_URL=${{ secrets.CALLING_APP_URL_DEV }}
+            CALLING_APP_API_URL=${{ secrets.CALLING_APP_API_URL_DEV }}
+            CALLING_APP_API_SECRET=${{ secrets.CALLING_APP_API_SECRET }}
+            ENVEOF
+
+            # ── Pull latest dev branch ───────────────────────────────────────
+            git fetch origin
+            git reset --hard origin/dev
+
+            # ── Install/update dependencies ──────────────────────────────────
+            npm install --production
+
+            # ── Restart with PM2 ─────────────────────────────────────────────
+            if pm2 list | grep -q "lms-backend-dev"; then
+              NODE_ENV=development HTTP_PORT=8082 pm2 restart lms-backend-dev --update-env
+            else
+              NODE_ENV=development HTTP_PORT=8082 pm2 start app.js --name lms-backend-dev
+            fi
+
+            pm2 save
+
+            # ── Verify ───────────────────────────────────────────────────────
+            pm2 status
+            pm2 logs lms-backend-dev --lines 20 --nostream
