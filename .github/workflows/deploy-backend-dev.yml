@@ -60,6 +60,7 @@ jobs:
             CALLING_APP_URL=${{ secrets.CALLING_APP_URL_DEV }}
             CALLING_APP_API_URL=${{ secrets.CALLING_APP_API_URL_DEV }}
             CALLING_APP_API_SECRET=${{ secrets.CALLING_APP_API_SECRET }}
+            LMS_API_URL=${{ secrets.LMS_API_URL_DEV }}
             ENVEOF
 
             # ── Pull latest dev branch ───────────────────────────────────────
@@ -71,9 +72,9 @@ jobs:
 
             # ── Restart with PM2 ─────────────────────────────────────────────
             if pm2 list | grep -q "lms-backend-dev"; then
-              NODE_ENV=development HTTP_PORT=8082 pm2 restart lms-backend-dev --update-env
+              NODE_ENV=development HTTP_PORT=8082 DB_USER=${{ secrets.DB_USER }} DB_PASSWORD=${{ secrets.DB_PASSWORD }} DB_NAME=${{ secrets.DB_NAME_DEV }} DB_HOST=${{ secrets.DB_HOST }} pm2 restart lms-backend-dev --update-env
             else
-              NODE_ENV=development HTTP_PORT=8082 pm2 start app.js --name lms-backend-dev
+              NODE_ENV=development HTTP_PORT=8082 DB_USER=${{ secrets.DB_USER }} DB_PASSWORD=${{ secrets.DB_PASSWORD }} DB_NAME=${{ secrets.DB_NAME_DEV }} DB_HOST=${{ secrets.DB_HOST }} pm2 start app.js --name lms-backend-dev
             fi
 
             pm2 save
