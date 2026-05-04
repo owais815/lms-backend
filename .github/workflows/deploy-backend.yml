@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
 
 jobs:
   deploy:
@@ -57,6 +60,7 @@ jobs:
             CALLING_APP_URL=${{ secrets.CALLING_APP_URL }}
             CALLING_APP_API_URL=${{ secrets.CALLING_APP_API_URL }}
             CALLING_APP_API_SECRET=${{ secrets.CALLING_APP_API_SECRET }}
+            LMS_API_URL=${{ secrets.LMS_API_URL }}
             ENVEOF
 
             # ── Pull latest code (force-reset to avoid merge conflicts) ────────
@@ -66,11 +70,11 @@ jobs:
             # ── Install/update dependencies ──────────────────────────────────
             npm install --production
 
-            # ── Restart with PM2 (pick up new .env) ─────────────────────────
+            # ── Restart with PM2 (pass critical vars explicitly to avoid cache issues) ──
             if pm2 list | grep -q "lms-backend"; then
-              pm2 restart lms-backend --update-env
+              NODE_ENV=production DB_USER=${{ secrets.DB_USER_PROD }} DB_PASSWORD=${{ secrets.DB_PASSWORD_PROD }} DB_NAME=${{ secrets.DB_NAME }} DB_HOST=${{ secrets.DB_HOST }} pm2 restart lms-backend --update-env
             else
-              NODE_ENV=production pm2 start app.js --name lms-backend
+              NODE_ENV=production DB_USER=${{ secrets.DB_USER_PROD }} DB_PASSWORD=${{ secrets.DB_PASSWORD_PROD }} DB_NAME=${{ secrets.DB_NAME }} DB_HOST=${{ secrets.DB_HOST }} pm2 start app.js --name lms-backend
             fi
 
             pm2 save
