@@ -172,8 +172,13 @@ app.use(
   }).single("file")
 );
 
-app.use("/api/resources", express.static(path.join(__dirname, "resources")));
-app.use("/resources", express.static(path.join(__dirname, "resources")));
+const serveStatic = express.static(path.join(__dirname, "resources"), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.jfif')) res.setHeader('Content-Type', 'image/jpeg');
+  }
+});
+app.use("/api/resources", serveStatic);
+app.use("/resources", serveStatic);
 app.use("/api/auth", authRoutes);
 app.use("/api/teacher", teacherRoutes);
 app.use("/api/student", studentRoutes);
