@@ -253,6 +253,7 @@ exports.getAllTeachers = (req, res, next) => {
   Teacher.findAll({
     attributes: {
       include: [
+        'imageUrl',
         [
           Sequelize.literal(
             '(SELECT COUNT(*) FROM CourseDetails WHERE CourseDetails.teacherId = Teacher.id)'
