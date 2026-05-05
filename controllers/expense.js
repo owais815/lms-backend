@@ -1,5 +1,6 @@
 const Expense = require('../models/Expense');
 const ExpenseCategory = require('../models/ExpenseCategory');
+const Loss = require('../models/Loss');
 const Admin = require('../models/Admin');
 const { Op } = require('sequelize');
 
@@ -127,6 +128,74 @@ exports.deleteExpense = async (req, res) => {
         if (!expense) return res.status(404).json({ success: false, message: 'Expense not found' });
         await expense.destroy();
         res.json({ success: true, message: 'Expense deleted' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+// ── Losses ────────────────────────────────────────────────────────────────────
+
+exports.getAllLosses = async (req, res) => {
+    const { startDate, endDate } = req.query;
+    const where = {};
+    if (startDate && endDate) where.date = { [Op.between]: [startDate, endDate] };
+    else if (startDate) where.date = { [Op.gte]: startDate };
+    else if (endDate) where.date = { [Op.lte]: endDate };
+    try {
+        const losses = await Loss.findAll({
+            where,
+            include: [{ model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] }],
+            order: [['date', 'DESC'], ['createdAt', 'DESC']],
+        });
+        res.json({ success: true, losses });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+exports.createLoss = async (req, res) => {
+    const { title, amount, date, reason, notes } = req.body;
+    if (!title || !amount || !date) {
+        return res.status(400).json({ success: false, message: 'title, amount, and date are required' });
+    }
+    try {
+        const loss = await Loss.create({
+            title, amount, date,
+            reason: reason || null,
+            notes: notes || null,
+            createdById: req.userId || null,
+        });
+        const full = await Loss.findByPk(loss.id, {
+            include: [{ model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] }],
+        });
+        res.status(201).json({ success: true, loss: full });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+exports.updateLoss = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const loss = await Loss.findByPk(id);
+        if (!loss) return res.status(404).json({ success: false, message: 'Loss not found' });
+        await loss.update(req.body);
+        const full = await Loss.findByPk(id, {
+            include: [{ model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] }],
+        });
+        res.json({ success: true, loss: full });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+exports.deleteLoss = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const loss = await Loss.findByPk(id);
+        if (!loss) return res.status(404).json({ success: false, message: 'Loss not found' });
+        await loss.destroy();
+        res.json({ success: true, message: 'Loss deleted' });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
