@@ -8,7 +8,7 @@ const Admin = require('../models/Admin');
 const salaryWithRelations = (id) =>
     Salary.findByPk(id, {
         include: [
-            { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'email'] },
+            { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'email', 'imageUrl'] },
             { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
         ],
     });
@@ -24,7 +24,7 @@ exports.getAllSalaries = async (req, res) => {
         const salaries = await Salary.findAll({
             where,
             include: [
-                { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'email'] },
+                { model: Teacher, attributes: ['id', 'firstName', 'lastName', 'email', 'imageUrl'] },
                 { model: Admin, as: 'CreatedBy', attributes: ['id', 'name', 'username'] },
             ],
             order: [['month', 'DESC'], ['createdAt', 'DESC']],
