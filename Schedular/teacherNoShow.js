@@ -3,9 +3,9 @@
 /**
  * teacherNoShow.js
  *
- * Runs every 5 minutes. Checks for ClassSessions that are:
+ * Runs every minute. Checks for ClassSessions that are:
  *   - Scheduled for today
- *   - Expected start time was >15 minutes ago
+ *   - Expected start time was >1 minute ago
  *   - Still in 'idle' status (teacher never clicked Start Session)
  *
  * Notifies all admins once per session (uses a Set to avoid duplicate alerts).
@@ -17,7 +17,7 @@ const ClassSession = require('../models/ClassSession');
 const Teacher = require('../models/Teacher');
 const notifyAdmins = require('../utils/notifyAdmins');
 
-const NO_SHOW_GRACE_MINUTES = 15;
+const NO_SHOW_GRACE_MINUTES = 1;
 const alertedSessions = new Set(); // in-memory dedup (resets on restart — acceptable)
 
 async function checkTeacherNoShows() {
@@ -25,7 +25,7 @@ async function checkTeacherNoShows() {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
 
-    // Grace cutoff: sessions whose start time was at least 15 min ago
+    // Grace cutoff: sessions whose start time was at least 1 min ago
     const graceCutoff = new Date(now.getTime() - NO_SHOW_GRACE_MINUTES * 60 * 1000);
     const graceCutoffTimeStr = graceCutoff.toTimeString().slice(0, 5); // "HH:MM"
 
@@ -63,8 +63,8 @@ async function checkTeacherNoShows() {
 }
 
 function startTeacherNoShowCron() {
-  cron.schedule('*/5 * * * *', checkTeacherNoShows);
-  console.log('[teacherNoShow] Cron started — checking every 5 minutes.');
+  cron.schedule('* * * * *', checkTeacherNoShows);
+  console.log('[teacherNoShow] Cron started — checking every minute.');
 }
 
 module.exports = { startTeacherNoShowCron };

@@ -38,6 +38,7 @@ const Salary = require("./Salary");
 const Admin = require("./Admin");
 const Expense = require("./Expense");
 const ExpenseCategory = require("./ExpenseCategory");
+const Loss = require("./Loss");
 
 // Setup associations
 // Expense associations
@@ -45,6 +46,10 @@ Expense.belongsTo(ExpenseCategory, { foreignKey: 'categoryId', as: 'Category' })
 ExpenseCategory.hasMany(Expense, { foreignKey: 'categoryId', as: 'Expenses' });
 Expense.belongsTo(Admin, { foreignKey: 'createdById', as: 'CreatedBy' });
 Admin.hasMany(Expense, { foreignKey: 'createdById', as: 'CreatedExpenses' });
+
+// Loss associations
+Loss.belongsTo(Admin, { foreignKey: 'createdById', as: 'CreatedBy' });
+Admin.hasMany(Loss, { foreignKey: 'createdById', as: 'CreatedLosses' });
 
 // Salary associations
 Teacher.hasMany(Salary, { foreignKey: 'teacherId' });
@@ -263,4 +268,5 @@ module.exports = {
   Salary,
   Expense,
   ExpenseCategory,
+  Loss,
 };

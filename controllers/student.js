@@ -72,6 +72,7 @@ exports.signup = async (req, res, next) => {
     referenceDetails,
     studentLabel,
     struckOffReason,
+    note,
   } = req.body;
 
   const t = await sequelize.transaction();
@@ -108,6 +109,7 @@ exports.signup = async (req, res, next) => {
       referenceDetails: enrollmentChannel === 'Reference' ? (referenceDetails || null) : null,
       studentLabel: studentLabel || null,
       struckOffReason: studentLabel === 'Struck off' ? (struckOffReason || null) : null,
+      note: note || null,
     }, { transaction: t });
 
     // Step 4: Assign teacher if provided (TeacherStudent M2M)
@@ -302,6 +304,7 @@ exports.update = async (req, res, next) => {
     referenceDetails,
     studentLabel,
     struckOffReason,
+    note,
   } = req.body;
 
   let updateFields = {};
@@ -391,6 +394,9 @@ exports.update = async (req, res, next) => {
   if (studentLabel !== undefined) {
     updateFields.studentLabel = studentLabel || null;
     updateFields.struckOffReason = studentLabel === 'Struck off' ? (struckOffReason || null) : null;
+  }
+  if (note !== undefined) {
+    updateFields.note = note || null;
   }
 
   try {

@@ -11,6 +11,12 @@ router.post('/categories', isAuth, checkPermission(PERMISSIONS.FINANCE_MANAGE), 
 router.put('/categories/:id', isAuth, checkPermission(PERMISSIONS.FINANCE_MANAGE), expenseController.updateCategory);
 router.delete('/categories/:id', isAuth, checkPermission(PERMISSIONS.FINANCE_MANAGE), expenseController.deleteCategory);
 
+// ── Losses (before /:id catch-alls) ──────────────────────────────────────────
+router.get('/losses', isAuth, checkPermission(PERMISSIONS.FINANCE_VIEW), expenseController.getAllLosses);
+router.post('/losses', isAuth, checkPermission(PERMISSIONS.FINANCE_MANAGE), expenseController.createLoss);
+router.put('/losses/:id', isAuth, checkPermission(PERMISSIONS.FINANCE_MANAGE), expenseController.updateLoss);
+router.delete('/losses/:id', isAuth, checkPermission(PERMISSIONS.FINANCE_MANAGE), expenseController.deleteLoss);
+
 // ── Expenses ──────────────────────────────────────────────────────────────────
 router.get('/summary/total', isAuth, checkPermission(PERMISSIONS.FINANCE_VIEW), expenseController.getTotalExpenses);
 router.get('/', isAuth, checkPermission(PERMISSIONS.FINANCE_VIEW), expenseController.getAllExpenses);

@@ -946,7 +946,7 @@ exports.joinSession = async (req, res) => {
 
     const session = await ClassSession.findByPk(sessionId, {
       include: [
-        { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName'] },
+        { model: Teacher, foreignKey: 'teacherId', attributes: ['id', 'firstName', 'lastName', 'imageUrl'] },
       ],
     });
 
@@ -974,14 +974,17 @@ exports.joinSession = async (req, res) => {
 
     const isPresenter = role === 'teacher' || role === 'admin';
 
-    // Determine display name
+    // Determine display name and profile image
     let userName = 'Participant';
+    let rawImageUrl = null;
     if (role === 'teacher' && session.Teacher) {
       userName = `${session.Teacher.firstName} ${session.Teacher.lastName}`;
+      rawImageUrl = session.Teacher.imageUrl || null;
     } else if (role === 'student') {
-      const requestingStudent = await Student.findByPk(userId, { attributes: ['firstName', 'lastName'] });
+      const requestingStudent = await Student.findByPk(userId, { attributes: ['firstName', 'lastName', 'profileImg'] });
       if (requestingStudent) {
         userName = `${requestingStudent.firstName} ${requestingStudent.lastName}`;
+        rawImageUrl = requestingStudent.profileImg || null;
       }
     } else if (role === 'admin') {
       userName = 'Admin';
@@ -992,12 +995,21 @@ exports.joinSession = async (req, res) => {
     const lmsToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
     const lmsApiUrl = process.env.LMS_API_URL || 'http://localhost:8080';
 
+    // Build absolute profile image URL accessible from the calling-app iframe
+    let profileImage = '';
+    if (rawImageUrl) {
+      profileImage = rawImageUrl.startsWith('http')
+        ? rawImageUrl
+        : `${lmsApiUrl}/${rawImageUrl.replace(/^\/+/, '')}`;
+    }
+
     const lmsParams = {
       lmsSessionId: String(session.id),
       lmsCourseId: session.courseDetailsId ? String(session.courseDetailsId) : '',
       lmsToken,
       lmsApiUrl,
       lmsUserRole: role,
+      ...(profileImage ? { lmsProfileImage: profileImage } : {}),
     };
 
     const joinUrl = await callingAppService.createJoinUrl(session.roomId, userName, isPresenter, false, false, lmsParams);
