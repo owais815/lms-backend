@@ -987,7 +987,13 @@ exports.joinSession = async (req, res) => {
         rawImageUrl = requestingStudent.profileImg || null;
       }
     } else if (role === 'admin') {
-      userName = 'Admin';
+      const requestingAdmin = await Admin.findByPk(userId, { attributes: ['name', 'profileImg'] });
+      if (requestingAdmin) {
+        userName = requestingAdmin.name || 'Admin';
+        rawImageUrl = requestingAdmin.profileImg || null;
+      } else {
+        userName = 'Admin';
+      }
     }
 
     // Extract the raw JWT to pass to the calling app so it can call LMS APIs directly
