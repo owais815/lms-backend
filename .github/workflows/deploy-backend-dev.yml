@@ -65,7 +65,12 @@ jobs:
             git reset --hard origin/dev
 
             # ── Install/update dependencies ──────────────────────────────────
-            npm install --production
+            # Use pnpm + the committed lockfile: pinned, reproducible versions,
+            # and postinstall scripts are blocked unless explicitly allowlisted
+            # (npm install with no lockfile re-resolves everything from the
+            # registry on every deploy and runs every postinstall unrestricted).
+            command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
+            pnpm install --prod --frozen-lockfile
 
             # ── Restart with PM2 ─────────────────────────────────────────────
             if pm2 list | grep -q "lms-backend-dev"; then
