@@ -7,6 +7,8 @@ const Courses = require('../models/Course');
 const ClassSession = require('../models/ClassSession');
 const ClassSessionStudent = require('../models/ClassSessionStudent');
 const Teacher = require('../models/Teacher');
+const notify = require('../utils/notify');
+const notifyAdmins = require('../utils/notifyAdmins');
 
 // ─── Mark single attendance (legacy endpoint, kept for backward compat) ───────
 exports.markAttendance = async (req, res, next) => {
@@ -332,6 +334,85 @@ exports.checkAttendanceStatus = async (req, res, next) => {
         message: 'No attendance record found for today.'
       });
     }
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};
+
+// ─── Teacher/admin: mark a student late for a live session ────────────────────
+exports.markLate = async (req, res, next) => {
+  try {
+    const { studentId, sessionId, courseDetailsId } = req.body;
+    if (!studentId || !sessionId) {
+      return res.status(400).json({ message: 'studentId and sessionId are required' });
+    }
+
+    const session = await ClassSession.findByPk(sessionId);
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+
+    const [attendance] = await Attendance.findOrCreate({
+      where: { studentId, sessionId },
+      defaults: { studentId, sessionId, courseDetailsId: courseDetailsId || null, date: session.date, status: 'Late' },
+    });
+    if (attendance.status !== 'Late') {
+      attendance.status = 'Late';
+      await attendance.save();
+    }
+
+    const student = await Student.findByPk(studentId, { attributes: ['firstName', 'lastName', 'parentId'] });
+    const studentName = student ? `${student.firstName} ${student.lastName}` : 'A student';
+
+    await notifyAdmins({
+      title: 'Student Running Late',
+      message: `${studentName} hasn't joined "${session.title}" yet.`,
+    });
+    if (student?.parentId) {
+      await notify({
+        userId: student.parentId,
+        userType: 'parent',
+        title: 'Student Running Late',
+        message: `${studentName} hasn't joined "${session.title}" yet — please check in.`,
+      });
+    }
+
+    return res.status(200).json({ message: 'Marked late', attendance });
+  } catch (err) {
+    if (!err.statusCode) err.statusCode = 500;
+    next(err);
+  }
+};
+
+// ─── Team: record how the parent responded after a lateness/no-show contact ───
+exports.recordParentResponse = async (req, res, next) => {
+  try {
+    const { id } = req.params; // Attendance record id
+    const { response } = req.body;
+    if (!['leave_today', 'multi_day_leave', 'no_response'].includes(response)) {
+      return res.status(422).json({ message: "response must be 'leave_today', 'multi_day_leave' or 'no_response'" });
+    }
+
+    const attendance = await Attendance.findByPk(id, { include: [{ model: ClassSession }] });
+    if (!attendance) return res.status(404).json({ message: 'Attendance record not found' });
+
+    attendance.parentResponse = response;
+    await attendance.save();
+
+    if (attendance.ClassSession?.teacherId) {
+      const messages = {
+        leave_today: 'Parent confirmed: leave today, regular class tomorrow.',
+        multi_day_leave: 'Parent confirmed: student is on leave for a few days.',
+        no_response: 'Parent unreachable — flagged for follow-up.',
+      };
+      await notify({
+        userId: attendance.ClassSession.teacherId,
+        userType: 'teacher',
+        title: 'Parent Response Recorded',
+        message: `${messages[response]} (Session: "${attendance.ClassSession.title}")`,
+      });
+    }
+
+    return res.status(200).json({ message: 'Parent response recorded', attendance });
   } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
     next(err);

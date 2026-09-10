@@ -3,6 +3,8 @@ const Notification = require("../models/Notifications");
 const { getIO } = require("../socket");
 const { onlineUsers } = require("../SocketMethods/HandleConnection");
 const { sendNotifications } = require("../utils/notificationUtil");
+const notify = require("../utils/notify");
+const notifyAdmins = require("../utils/notifyAdmins");
 
 
 const waitForIO = async () => {
@@ -62,6 +64,12 @@ exports.scheduleClass = async (req, res) => {
           `Make up class for ${studentName} scheduled on ${formattedDate} at ${formattedTime}.`,
           `Your make up class has been scheduled on ${formattedDate} at ${formattedTime}.`
         );
+
+    notifyAdmins({
+      title: 'Makeup Class Requested',
+      message: `A makeup class for ${studentName} on ${formattedDate} at ${formattedTime} is awaiting approval.`,
+    });
+
     res.status(201).json({ message: 'Makeup class scheduled successfully', data: newClass });
   } catch (error) {
     console.error('Error scheduling makeup class:', error);
@@ -124,6 +132,34 @@ exports.updateStatus = async (req, res) => {
     makeupClass.status = status;
     makeupClass.adminReason = adminReason;
     await makeupClass.save();
+
+    const formattedDate = new Date(makeupClass.date).toLocaleDateString();
+    const formattedTime = new Date(`1970-01-01T${makeupClass.time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (status === 'Approved') {
+      notify({
+        userId: makeupClass.teacherId,
+        userType: 'teacher',
+        title: 'Makeup Class Approved',
+        message: `The makeup class on ${formattedDate} at ${formattedTime} has been approved.`,
+      });
+      const student = await Student.findByPk(makeupClass.studentId, { attributes: ['id', 'parentId'] });
+      const confirmMsg = `Your makeup class is confirmed for ${formattedDate} at ${formattedTime}.`;
+      if (student) {
+        notify({ userId: student.id, userType: 'student', title: 'Makeup Class Confirmed', message: confirmMsg });
+        if (student.parentId) {
+          notify({ userId: student.parentId, userType: 'parent', title: 'Makeup Class Confirmed', message: confirmMsg });
+        }
+      }
+    } else if (status === 'Rejected') {
+      notify({
+        userId: makeupClass.teacherId,
+        userType: 'teacher',
+        title: 'Makeup Class Rejected',
+        message: `Your makeup request for ${formattedDate} at ${formattedTime} was rejected${adminReason ? `: ${adminReason}` : '.'}`,
+        priority: 'warning',
+      });
+    }
 
     res.status(200).json({ message: 'Class status updated successfully', data: makeupClass });
   } catch (error) {

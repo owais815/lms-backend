@@ -6,6 +6,18 @@ const Student = require('../models/Student');
 const Plan = require('../models/Plan');
 const PlanChangeRequest = require('../models/PlanChangeRequest');
 const Admin = require('../models/Admin');
+const notify = require('../utils/notify');
+const notifyAdmins = require('../utils/notifyAdmins');
+
+// Notify a student and, if they have one on file, their parent with the same message.
+const notifyStudentAndParent = async ({ studentId, title, message, priority = 'info' }) => {
+    const student = await Student.findByPk(studentId, { attributes: ['id', 'parentId'] });
+    if (!student) return;
+    await notify({ userId: student.id, userType: 'student', title, message, priority });
+    if (student.parentId) {
+        await notify({ userId: student.parentId, userType: 'parent', title, message, priority });
+    }
+};
 
 const feeWithRelations = (id) =>
     Fee.findByPk(id, {
@@ -178,8 +190,89 @@ exports.uploadProof = async (req, res) => {
         }
 
         fee.proofPath = `resources/${req.file.filename}`;
+        fee.proofStatus = 'submitted';
+        fee.rejectionReason = null;
         await fee.save();
+
+        const student = await Student.findByPk(fee.studentId, { attributes: ['firstName', 'lastName'] });
+        const studentName = student ? `${student.firstName} ${student.lastName}` : 'A student';
+        notifyAdmins({
+            title: 'Payment Proof Submitted',
+            message: `${studentName} submitted payment proof for "${fee.title}" — awaiting review.`,
+        });
+
         res.json({ fee, message: 'Payment proof uploaded successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// PUT /api/fees/:id/verify-proof — Admin: proof matches, confirm payment
+exports.verifyProof = async (req, res) => {
+    try {
+        const fee = await Fee.findByPk(req.params.id);
+        if (!fee) return res.status(404).json({ message: 'Fee not found' });
+
+        fee.proofStatus = 'verified';
+        fee.rejectionReason = null;
+        if (fee.status !== 'paid') {
+            fee.status = 'paid';
+            fee.paidDate = fee.paidDate || new Date().toISOString().split('T')[0];
+        }
+        await fee.save();
+
+        await notifyStudentAndParent({
+            studentId: fee.studentId,
+            title: 'Payment Confirmed',
+            message: `Your payment for "${fee.title}" has been confirmed. Thank you!`,
+        });
+
+        const full = await feeWithRelations(fee.id);
+        res.json({ fee: full });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// PUT /api/fees/:id/reject-proof — Admin: proof doesn't match, ask parent to resubmit
+exports.rejectProof = async (req, res) => {
+    try {
+        const fee = await Fee.findByPk(req.params.id);
+        if (!fee) return res.status(404).json({ message: 'Fee not found' });
+        const { reason } = req.body;
+        if (!reason) return res.status(422).json({ message: 'A rejection reason is required' });
+
+        fee.proofStatus = 'rejected';
+        fee.rejectionReason = reason;
+        await fee.save();
+
+        await notifyStudentAndParent({
+            studentId: fee.studentId,
+            title: 'Payment Proof Mismatch',
+            message: `The payment proof for "${fee.title}" doesn't match: ${reason}. Please resubmit.`,
+            priority: 'warning',
+        });
+
+        const full = await feeWithRelations(fee.id);
+        res.json({ fee: full });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// POST /api/fees/:id/remind-proof — Admin: nudge student/parent to share proof
+exports.remindProof = async (req, res) => {
+    try {
+        const fee = await Fee.findByPk(req.params.id);
+        if (!fee) return res.status(404).json({ message: 'Fee not found' });
+
+        await notifyStudentAndParent({
+            studentId: fee.studentId,
+            title: 'Payment Proof Reminder',
+            message: `Reminder: please share your payment proof for "${fee.title}".`,
+        });
+
+        res.json({ message: 'Reminder sent' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

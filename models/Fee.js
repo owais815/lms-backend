@@ -44,6 +44,15 @@ const Fee = sequelize.define('Fee', {
         type: Sequelize.STRING,
         allowNull: true,
     },
+    proofStatus: {
+        type: Sequelize.ENUM('none', 'submitted', 'rejected', 'verified'),
+        allowNull: false,
+        defaultValue: 'none',
+    },
+    rejectionReason: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+    },
     notes: {
         type: Sequelize.TEXT,
         allowNull: true,

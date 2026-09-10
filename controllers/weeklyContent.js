@@ -6,6 +6,8 @@ const Courses = require('../models/Course');
 const WeeklyContent = require('../models/WeeklyContent');
 const WeeklyResource = require('../models/WeeklyResources');
 const fs = require('fs').promises;
+const notify = require('../utils/notify');
+const notifyAdmins = require('../utils/notifyAdmins');
 
 exports.uploadResource = async (req, res,next) => {
   console.log("course details id is:::",req.body.courseDetailId)
@@ -29,6 +31,17 @@ exports.uploadResource = async (req, res,next) => {
       fileType: file.mimetype,
       filePath: filePath,
       weeklyContentId: weeklyContent.id,
+    });
+
+    // New content, or a re-upload after review — send it back to the review queue.
+    if (weeklyContent.status !== 'pending_review') {
+      weeklyContent.status = 'pending_review';
+      weeklyContent.reviewNote = null;
+      await weeklyContent.save();
+    }
+    notifyAdmins({
+      title: 'Lesson Content Submitted',
+      message: `New content uploaded for Week ${weeklyContent.weekNumber} — awaiting review.`,
     });
 
     res.status(201).json({ message: 'Weekly Resources uploaded successfully', resource });
@@ -111,6 +124,75 @@ exports.serveResource = async (req, res,next) => {
   }
 };
 
+
+// GET /api/weeklyContent/pending-review — Admin: content awaiting review
+exports.getPendingReview = async (req, res, next) => {
+  try {
+    const weeks = await WeeklyContent.findAll({
+      where: { status: 'pending_review' },
+      include: [
+        { model: WeeklyResource, as: 'resources' },
+        { model: CourseDetails, include: [{ model: Courses }] },
+      ],
+    });
+    res.status(200).json({ success: true, data: weeks });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PUT /api/weeklyContent/:weeklyContentId/review — Admin: approve or send back for edits
+exports.reviewContent = async (req, res, next) => {
+  try {
+    const { weeklyContentId } = req.params;
+    const { decision, note } = req.body;
+    if (!['approved', 'needs_edit'].includes(decision)) {
+      return res.status(422).json({ message: "decision must be 'approved' or 'needs_edit'" });
+    }
+
+    const weeklyContent = await WeeklyContent.findByPk(weeklyContentId);
+    if (!weeklyContent) return res.status(404).json({ message: 'Weekly content not found' });
+
+    const courseDetail = await CourseDetails.findByPk(weeklyContent.courseDetailId, {
+      include: [{ model: Student, attributes: ['id', 'firstName', 'lastName', 'parentId'] }],
+    });
+
+    weeklyContent.status = decision;
+    weeklyContent.reviewNote = note || null;
+    weeklyContent.reviewedById = req.userId || null;
+    await weeklyContent.save();
+
+    if (decision === 'approved') {
+      if (courseDetail?.teacherId) {
+        notify({
+          userId: courseDetail.teacherId,
+          userType: 'teacher',
+          title: 'Lesson Content Approved',
+          message: `Your content for Week ${weeklyContent.weekNumber} has been approved.`,
+        });
+      }
+      if (courseDetail?.Student) {
+        const shareMsg = `New lesson content is available for Week ${weeklyContent.weekNumber}.`;
+        notify({ userId: courseDetail.Student.id, userType: 'student', title: 'New Lesson Content', message: shareMsg });
+        if (courseDetail.Student.parentId) {
+          notify({ userId: courseDetail.Student.parentId, userType: 'parent', title: 'New Lesson Content', message: shareMsg });
+        }
+      }
+    } else if (courseDetail?.teacherId) {
+      notify({
+        userId: courseDetail.teacherId,
+        userType: 'teacher',
+        title: 'Lesson Content Needs Edits',
+        message: `Your content for Week ${weeklyContent.weekNumber} needs edits${note ? `: ${note}` : '.'}`,
+        priority: 'warning',
+      });
+    }
+
+    res.status(200).json({ success: true, data: weeklyContent });
+  } catch (error) {
+    next(error);
+  }
+};
 
 exports.uploadProgress = async (req, res, next) => {
   try {

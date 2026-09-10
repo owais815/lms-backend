@@ -38,6 +38,8 @@ const faqRoutes = require("./routes/faq");
 const certificateRoutes = require("./routes/certificate");
 const salaryRoutes = require("./routes/salary");
 const expenseRoutes = require("./routes/expense");
+const leaveRoutes = require("./routes/leave");
+const autoPayRoutes = require("./routes/autoPay");
 
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
@@ -46,6 +48,7 @@ const { startAutoEndSessionsCron } = require('./Schedular/autoEndSessions');
 const { startOverdueSalariesCron } = require('./Schedular/markOverdueSalaries');
 const { startTeacherNoShowCron } = require('./Schedular/teacherNoShow');
 const { startStaleApprovalsCron } = require('./Schedular/staleApprovals');
+const { startAutoChargeFeesCron } = require('./Schedular/autoChargeFees');
 const isAuth = require('./middleware/is-auth');
 
 // Choose the environment
@@ -212,6 +215,8 @@ app.use("/api/faq", faqRoutes);
 app.use("/api/certificates", certificateRoutes);
 app.use("/api/salary", salaryRoutes);
 app.use("/api/expenses", expenseRoutes);
+app.use("/api/leave", leaveRoutes);
+app.use("/api/auto-pay", autoPayRoutes);
 
 // ── Global error handler ─────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
@@ -263,6 +268,13 @@ async function patchEnumColumns() {
     `ALTER TABLE ChatMessages ADD COLUMN messageType ENUM('text','voice') NOT NULL DEFAULT 'text'`,
     `ALTER TABLE TeacherAttendances ADD COLUMN status ENUM('Present','Absent') NOT NULL DEFAULT 'Absent'`,
     `ALTER TABLE Fees ADD COLUMN status ENUM('pending','paid','overdue','cancelled') NOT NULL DEFAULT 'pending'`,
+    `ALTER TABLE Fees ADD COLUMN proofStatus ENUM('none','submitted','rejected','verified') NOT NULL DEFAULT 'none'`,
+    `ALTER TABLE Fees ADD COLUMN rejectionReason TEXT DEFAULT NULL`,
+    `ALTER TABLE WeeklyContents ADD COLUMN status ENUM('pending_review','needs_edit','approved') NOT NULL DEFAULT 'pending_review'`,
+    `ALTER TABLE WeeklyContents ADD COLUMN reviewNote TEXT DEFAULT NULL`,
+    `ALTER TABLE WeeklyContents ADD COLUMN reviewedById INT DEFAULT NULL`,
+    `ALTER TABLE Attendances MODIFY COLUMN status ENUM('Present','Absent','Late') NOT NULL DEFAULT 'Present'`,
+    `ALTER TABLE Attendances ADD COLUMN parentResponse ENUM('leave_today','multi_day_leave','no_response') DEFAULT NULL`,
     `ALTER TABLE Students ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
     `ALTER TABLE Teachers ADD COLUMN shift TEXT DEFAULT NULL`,
     `ALTER TABLE Teachers MODIFY COLUMN shift TEXT DEFAULT NULL`,
@@ -313,6 +325,7 @@ sequelize
     cleanupAnnouncements();
     startMessageCleanup(io);
     startOverdueFeesCron();
+    startAutoChargeFeesCron();
     startAutoEndSessionsCron();
     startOverdueSalariesCron();
     startTeacherNoShowCron();

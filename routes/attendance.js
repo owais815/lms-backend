@@ -20,6 +20,8 @@ router.get('/course/:courseDetailsId', isAuth, attendanceController.getCourseAtt
 
 // ─── Session-based routes ─────────────────────────────────────────────────────
 router.post('/bulk-mark',              isAuth, attendanceController.bulkMarkAttendance);
+router.post('/mark-late',              isAuth, attendanceController.markLate);
+router.put('/:id/parent-response',     isAuth, attendanceController.recordParentResponse);
 router.get('/session/:sessionId',      isAuth, attendanceController.getSessionAttendanceSheet);
 router.get('/teacher/:teacherId/sessions', isAuth, attendanceController.getTeacherSessions);
 

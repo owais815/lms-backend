@@ -13,9 +13,13 @@ const Attendance = sequelize.define('Attendance', {
     allowNull: false
   },
   status: {
-    type: DataTypes.ENUM('Present', 'Absent'),
+    type: DataTypes.ENUM('Present', 'Absent', 'Late'),
     allowNull: false,
     defaultValue: 'Present'
+  },
+  parentResponse: {
+    type: DataTypes.ENUM('leave_today', 'multi_day_leave', 'no_response'),
+    allowNull: true,
   },
   studentId: {
     type: DataTypes.INTEGER,

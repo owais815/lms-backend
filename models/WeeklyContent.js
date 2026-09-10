@@ -26,6 +26,19 @@ const WeeklyContent = sequelize.define('WeeklyContent', {
         type: DataTypes.STRING, // Optional custom heading
         allowNull: true
     },
+    status: {
+        type: DataTypes.ENUM('pending_review', 'needs_edit', 'approved'),
+        allowNull: false,
+        defaultValue: 'pending_review',
+    },
+    reviewNote: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    reviewedById: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
 });
 
 CourseDetails.hasMany(WeeklyContent, { foreignKey: 'courseDetailId' });

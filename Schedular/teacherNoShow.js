@@ -15,6 +15,8 @@ const cron = require('node-cron');
 const { Op } = require('sequelize');
 const ClassSession = require('../models/ClassSession');
 const Teacher = require('../models/Teacher');
+const Student = require('../models/Student');
+const notify = require('../utils/notify');
 const notifyAdmins = require('../utils/notifyAdmins');
 
 const NO_SHOW_GRACE_MINUTES = 1;
@@ -36,7 +38,8 @@ async function checkTeacherNoShows() {
         status: { [Op.in]: ['scheduled', 'active'] },
         startTime: { [Op.lte]: graceCutoffTimeStr },
       },
-      attributes: ['id', 'title', 'startTime', 'teacherId'],
+      attributes: ['id', 'title', 'startTime', 'teacherId', 'studentId'],
+      include: [{ model: Student, attributes: ['id', 'parentId'] }],
     });
 
     for (const session of overdueSessions) {
@@ -54,6 +57,14 @@ async function checkTeacherNoShows() {
         message: `${teacherName} has not started the session "${session.title}" scheduled at ${session.startTime} (${NO_SHOW_GRACE_MINUTES}+ min overdue).`,
         priority: 'critical',
       });
+
+      if (session.Student) {
+        const lateMsg = `Your class "${session.title}" is starting a little late — the teacher hasn't joined yet.`;
+        await notify({ userId: session.Student.id, userType: 'student', title: 'Class Starting Late', message: lateMsg });
+        if (session.Student.parentId) {
+          await notify({ userId: session.Student.parentId, userType: 'parent', title: 'Class Starting Late', message: lateMsg });
+        }
+      }
 
       console.log(`[teacherNoShow] Alert sent for session ${session.id} — ${teacherName}`);
     }

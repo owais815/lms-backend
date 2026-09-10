@@ -365,7 +365,7 @@ exports.cancelSession = async (req, res) => {
       const cancelMsg = `The class "${session.title}" on ${session.date} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`;
 
       // Notify the assigned teacher
-      await notify({ userId: session.teacherId, userType: 'TEACHER', title: 'Class Cancelled', message: cancelMsg });
+      await notify({ userId: session.teacherId, userType: 'teacher', title: 'Class Cancelled', message: cancelMsg });
 
       if (session.courseId && session.teacherId) {
         const enrolledStudents = await CourseDetails.findAll({
@@ -375,9 +375,9 @@ exports.cancelSession = async (req, res) => {
         await Promise.all(
           enrolledStudents.map(async (cd) => {
             if (!cd.Student) return;
-            await notify({ userId: cd.Student.id, userType: 'STUDENT', title: 'Class Cancelled', message: cancelMsg });
+            await notify({ userId: cd.Student.id, userType: 'student', title: 'Class Cancelled', message: cancelMsg });
             if (cd.Student.parentId) {
-              await notify({ userId: cd.Student.parentId, userType: 'PARENT', title: 'Class Cancelled', message: cancelMsg });
+              await notify({ userId: cd.Student.parentId, userType: 'parent', title: 'Class Cancelled', message: cancelMsg });
             }
           })
         );
@@ -1352,7 +1352,7 @@ exports.updateSession = async (req, res) => {
         // 1. Notify old teacher — removed from session
         await notify({
           userId: oldTeacherId,
-          userType: 'TEACHER',
+          userType: 'teacher',
           title: 'Removed from Session',
           message: `You have been unassigned from the class ${sessionLabel}. Please check with the admin for details.`,
         });
@@ -1360,7 +1360,7 @@ exports.updateSession = async (req, res) => {
         // 2. Notify new teacher — assigned to session
         await notify({
           userId: Number(teacherId),
-          userType: 'TEACHER',
+          userType: 'teacher',
           title: 'Assigned to Session',
           message: `You have been assigned to teach the class ${sessionLabel}. Please check your schedule.`,
         });
@@ -1376,14 +1376,14 @@ exports.updateSession = async (req, res) => {
               if (!cd.Student) return;
               await notify({
                 userId: cd.Student.id,
-                userType: 'STUDENT',
+                userType: 'student',
                 title: 'Session Teacher Changed',
                 message: `The teacher for your class ${sessionLabel} has been changed. Please check your schedule.`,
               });
               if (cd.Student.parentId) {
                 await notify({
                   userId: cd.Student.parentId,
-                  userType: 'PARENT',
+                  userType: 'parent',
                   title: 'Session Teacher Changed',
                   message: `The teacher for your child's class ${sessionLabel} has been changed.`,
                 });
@@ -1395,7 +1395,7 @@ exports.updateSession = async (req, res) => {
         // Regular update — notify the (unchanged) teacher
         const changedFields = Object.keys(updates).join(', ');
         const updateMsg = `The class ${sessionLabel} has been updated (${changedFields} changed). Please check the schedule.`;
-        await notify({ userId: oldTeacherId, userType: 'TEACHER', title: 'Class Updated', message: updateMsg });
+        await notify({ userId: oldTeacherId, userType: 'teacher', title: 'Class Updated', message: updateMsg });
 
         // Notify students + parents of unchanged teacher
         if (session.courseId && oldTeacherId) {
@@ -1406,9 +1406,9 @@ exports.updateSession = async (req, res) => {
           await Promise.all(
             enrolledStudents.map(async (cd) => {
               if (!cd.Student) return;
-              await notify({ userId: cd.Student.id, userType: 'STUDENT', title: 'Class Updated', message: updateMsg });
+              await notify({ userId: cd.Student.id, userType: 'student', title: 'Class Updated', message: updateMsg });
               if (cd.Student.parentId) {
-                await notify({ userId: cd.Student.parentId, userType: 'PARENT', title: 'Class Updated', message: updateMsg });
+                await notify({ userId: cd.Student.parentId, userType: 'parent', title: 'Class Updated', message: updateMsg });
               }
             })
           );
@@ -1618,21 +1618,21 @@ exports.deleteSession = async (req, res) => {
       // Notify teacher
       if (session.teacherId) {
         notifyPromises.push(
-          notify({ userId: session.teacherId, userType: 'TEACHER', title: 'Session Deleted', message: deleteMsg })
+          notify({ userId: session.teacherId, userType: 'teacher', title: 'Session Deleted', message: deleteMsg })
         );
       }
 
       // Notify each student
       for (const student of studentsToNotify) {
         notifyPromises.push(
-          notify({ userId: student.id, userType: 'STUDENT', title: 'Session Deleted', message: deleteMsg })
+          notify({ userId: student.id, userType: 'student', title: 'Session Deleted', message: deleteMsg })
         );
       }
 
       // Notify parents
       for (const parentId of parentIds) {
         notifyPromises.push(
-          notify({ userId: parentId, userType: 'PARENT', title: 'Session Deleted', message: deleteMsg })
+          notify({ userId: parentId, userType: 'parent', title: 'Session Deleted', message: deleteMsg })
         );
       }
 

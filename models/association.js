@@ -39,6 +39,8 @@ const Admin = require("./Admin");
 const Expense = require("./Expense");
 const ExpenseCategory = require("./ExpenseCategory");
 const Loss = require("./Loss");
+const AutoPayMethod = require("./AutoPayMethod");
+const LeaveNotice = require("./LeaveNotice");
 
 // Setup associations
 // Expense associations
@@ -50,6 +52,13 @@ Admin.hasMany(Expense, { foreignKey: 'createdById', as: 'CreatedExpenses' });
 // Loss associations
 Loss.belongsTo(Admin, { foreignKey: 'createdById', as: 'CreatedBy' });
 Admin.hasMany(Loss, { foreignKey: 'createdById', as: 'CreatedLosses' });
+
+// AutoPayMethod associations
+AutoPayMethod.belongsTo(Student, { foreignKey: 'studentId' });
+Student.hasMany(AutoPayMethod, { foreignKey: 'studentId' });
+
+// LeaveNotice associations
+LeaveNotice.belongsTo(Admin, { foreignKey: 'createdById', as: 'CreatedBy' });
 
 // Salary associations
 Teacher.hasMany(Salary, { foreignKey: 'teacherId' });
@@ -269,4 +278,6 @@ module.exports = {
   Expense,
   ExpenseCategory,
   Loss,
+  AutoPayMethod,
+  LeaveNotice,
 };
