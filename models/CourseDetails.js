@@ -34,7 +34,18 @@ const CourseDetails = sequelize.define('CourseDetails', {
             model: 'Courses',
             key: 'id'
         }
-    }
+    },
+    // Enrollment start — used to compute the "current" lesson week.
+    startDate: {
+        type: Sequelize.DATEONLY,
+        allowNull: true,
+        defaultValue: () => new Date().toISOString().split('T')[0],
+    },
+    status: {
+        type: Sequelize.ENUM('active', 'completed'),
+        allowNull: false,
+        defaultValue: 'active',
+    },
 });
 
 CourseDetails.belongsTo(Courses, { foreignKey: 'courseId' });

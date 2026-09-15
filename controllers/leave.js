@@ -86,6 +86,13 @@ exports.logLeave = async (req, res) => {
                     message: `We've noted ${studentName}'s leave from ${startDate}${endDate ? ` to ${endDate}` : ''}.`,
                 });
             }
+
+            if (sessions.length > 0) {
+                await notifyAdmins({
+                    title: 'Student on Leave',
+                    message: `${studentName} is on leave ${startDate}${endDate ? ` to ${endDate}` : ''} — ${sessions.length} session(s) may need rescheduling.`,
+                });
+            }
         }
 
         res.status(201).json({ leave });

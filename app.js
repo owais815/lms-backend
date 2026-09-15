@@ -49,6 +49,7 @@ const { startOverdueSalariesCron } = require('./Schedular/markOverdueSalaries');
 const { startTeacherNoShowCron } = require('./Schedular/teacherNoShow');
 const { startStaleApprovalsCron } = require('./Schedular/staleApprovals');
 const { startAutoChargeFeesCron } = require('./Schedular/autoChargeFees');
+const { startMissingLessonsCron } = require('./Schedular/checkMissingLessons');
 const isAuth = require('./middleware/is-auth');
 
 // Choose the environment
@@ -275,6 +276,10 @@ async function patchEnumColumns() {
     `ALTER TABLE WeeklyContents ADD COLUMN reviewedById INT DEFAULT NULL`,
     `ALTER TABLE Attendances MODIFY COLUMN status ENUM('Present','Absent','Late') NOT NULL DEFAULT 'Present'`,
     `ALTER TABLE Attendances ADD COLUMN parentResponse ENUM('leave_today','multi_day_leave','no_response') DEFAULT NULL`,
+    `ALTER TABLE CourseDetails ADD COLUMN startDate DATE DEFAULT NULL`,
+    `ALTER TABLE CourseDetails ADD COLUMN status ENUM('active','completed') NOT NULL DEFAULT 'active'`,
+    // Backfill startDate for rows created before this column existed.
+    `UPDATE CourseDetails SET startDate = DATE(createdAt) WHERE startDate IS NULL`,
     `ALTER TABLE Students ADD COLUMN shift ENUM('Morning','Afternoon','Evening') DEFAULT NULL`,
     `ALTER TABLE Teachers ADD COLUMN shift TEXT DEFAULT NULL`,
     `ALTER TABLE Teachers MODIFY COLUMN shift TEXT DEFAULT NULL`,
@@ -326,6 +331,7 @@ sequelize
     startMessageCleanup(io);
     startOverdueFeesCron();
     startAutoChargeFeesCron();
+    startMissingLessonsCron();
     startAutoEndSessionsCron();
     startOverdueSalariesCron();
     startTeacherNoShowCron();

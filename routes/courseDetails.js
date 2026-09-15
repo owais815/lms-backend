@@ -21,6 +21,7 @@ router.put('/assignCourse', isAuth, checkPermission(PERMISSIONS.COURSES_CREATE),
 
 router.delete('/:courseId',                                   isAuth, checkPermission(PERMISSIONS.COURSES_DELETE), courseController.deleteCourse);
 router.put('/:courseId',                                      isAuth, checkPermission(PERMISSIONS.COURSES_EDIT),   courseController.updateCourse);
+router.put('/:courseId/complete',                              isAuth, checkPermission(PERMISSIONS.COURSES_EDIT),   courseController.completeCourse);
 router.get('/getCourseById/:courseId',                        isAuth, courseController.getCourseById);
 router.get('/getCourseByStdId/:stdId',                        isAuth, courseController.getCourseByStdId);
 router.get('/getCourseByStdAndTeacherId/:stdId/:teacherId',   isAuth, courseController.getCourseByStdAndTeacherId);

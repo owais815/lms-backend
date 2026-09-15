@@ -10,6 +10,7 @@ const Student = require("../models/Student");
 const CourseDetails = require("../models/CourseDetails");
 const Courses = require("../models/Course");
 const { Sequelize, where } = require("sequelize");
+const notify = require("../utils/notify");
 
 
 
@@ -393,6 +394,42 @@ exports.getStudentsByCourse = (req, res, next) => {
             next(err);
         });
   };
+
+// PUT /api/courseDetails/:courseId/complete — Admin: close out a finished enrollment
+exports.completeCourse = async (req, res, next) => {
+  try {
+    const { courseId } = req.params; // this is actually the CourseDetails row id
+    const courseDetail = await CourseDetails.findByPk(courseId, {
+      include: [{ model: Courses, attributes: ['courseName'] }],
+    });
+    if (!courseDetail) {
+      const error = new Error('Course not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    if (courseDetail.status === 'completed') {
+      return res.status(200).json({ message: 'Course already marked complete.', course: courseDetail });
+    }
+
+    courseDetail.status = 'completed';
+    await courseDetail.save();
+
+    const courseName = courseDetail.Course?.courseName || 'the course';
+    if (courseDetail.teacherId) {
+      await notify({
+        userId: courseDetail.teacherId,
+        userType: 'teacher',
+        title: 'Course Complete',
+        message: `${courseName} has been marked complete and shared as finished.`,
+      });
+    }
+
+    res.status(200).json({ message: 'Course marked complete.', course: courseDetail });
+  } catch (error) {
+    if (!error.statusCode) error.statusCode = 500;
+    next(error);
+  }
+};
 
 exports.topCoursesByEnrollment = async (req, res, next) => {
   try {

@@ -37,6 +37,15 @@ function startOverdueFeesCron() {
                 priority: 'warning',
             });
 
+            const noProofFees = overdueFees.filter((fee) => fee.proofStatus === 'none');
+            if (noProofFees.length > 0) {
+                await notifyAdmins({
+                    title: 'Payment Proof Missing',
+                    message: `${noProofFees.length} overdue fee${noProofFees.length > 1 ? 's have' : ' has'} no payment proof submitted yet — consider sending a reminder.`,
+                    priority: 'warning',
+                });
+            }
+
             await Promise.all(
                 overdueFees.map(async (fee) => {
                     if (!fee.Student) return;
