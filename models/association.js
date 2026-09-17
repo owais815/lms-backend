@@ -52,6 +52,12 @@ const EmailEventSetting = require("./EmailEventSetting");
 const EmailSettingsMeta = require("./EmailSettingsMeta");
 const EmailSuppression = require("./EmailSuppression");
 
+// In-app notification settings. NotificationSettingsMeta is only ever touched by
+// raw SQL (notifications/settings/seed.js and store.js), so this require is the
+// only thing that puts it in front of sync({ alter: true }). Without it the table
+// is never created and boot dies in the seeder's INSERT.
+const NotificationSettingsMeta = require("./NotificationSettingsMeta");
+
 // Setup associations
 // Expense associations
 Expense.belongsTo(ExpenseCategory, { foreignKey: 'categoryId', as: 'Category' });
@@ -303,4 +309,5 @@ module.exports = {
   EmailEventSetting,
   EmailSettingsMeta,
   EmailSuppression,
+  NotificationSettingsMeta,
 };
