@@ -13,6 +13,8 @@ const { Op, Sequelize } = require("sequelize");
 const sequelize = require("../utils/database");
 const Student = require("../models/Student");
 const CourseDetails = require("../models/CourseDetails");
+const notify = require("../utils/notify");
+const { sendEmailEvent } = require("../emails");
 const {
   QuizAttempt,
   SubmittedAssignment,
@@ -133,6 +135,15 @@ exports.signup = async (req, res, next) => {
     }, { transaction: t });
 
     await t.commit();
+
+    // Awaited: this event is `critical` in the registry, so the intent to send
+    // is durably recorded before we tell the caller the account exists. It is
+    // two indexed inserts and it cannot throw.
+    await sendEmailEvent('account.created_student', {
+      user: { id: student.id, firstName, lastName, username, email },
+      tempPassword: password,
+      student: { id: student.id },
+    }, { occurredAt: new Date() });
 
     res.status(201).json({
       success: true,
@@ -587,6 +598,21 @@ exports.toggleStatus = async (req, res, next) => {
     if (!student) return res.status(404).json({ message: 'Student not found.' });
     const newStatus = student.status === 'active' ? 'inactive' : 'active';
     await student.update({ status: newStatus });
+
+    await notify({
+      userId: student.id,
+      userType: 'student',
+      title: newStatus === 'active' ? 'Account Reactivated' : 'Account Deactivated',
+      message: newStatus === 'active'
+        ? 'Your account has been reactivated. You can sign in again.'
+        : 'Your account has been deactivated. Contact support if this is unexpected.',
+      priority: newStatus === 'active' ? 'info' : 'warning',
+    });
+    sendEmailEvent(
+      newStatus === 'active' ? 'account.reactivated' : 'account.deactivated',
+      { user: student, student, userRole: 'student' },
+      { occurredAt: new Date() }
+    );
     res.status(200).json({ message: 'Status updated.', status: newStatus, id: student.id });
   } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
@@ -1198,6 +1224,16 @@ exports.bulkImport = async (req, res, next) => {
       failed.push({ row: rowNum, reason: createErr.message });
     }
   }
+
+  // Goes to the admin who ran the import, so a partially failed import is not
+  // something they have to notice by re-reading the response body.
+  sendEmailEvent('account.bulk_import_finished', {
+    created: importedStudents.length,
+    skipped: 0,
+    failed: failed.length,
+    errors: failed.map((f) => `Row ${f.row}: ${f.reason}`),
+    entityId: req.userId || null,
+  }, { occurredAt: new Date() });
 
   return res.status(200).json({
     success: true,
