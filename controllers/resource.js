@@ -4,6 +4,7 @@ const CourseDetails = require('../models/CourseDetails');
 const path = require('path');
 const Courses = require('../models/Course');
 const fs = require('fs').promises;
+const { notifyStudentAndParent } = require('../utils/notifyAudience');
 
 exports.uploadResource = async (req, res,next) => {
 
@@ -21,6 +22,15 @@ exports.uploadResource = async (req, res,next) => {
       studentId: studentId,
       courseId: courseId
     });
+
+    if (studentId) {
+      await notifyStudentAndParent({
+        studentId,
+        title: 'New Resource Shared',
+        message: `A new resource "${originalFilename}" has been shared with you.`,
+        parentMessage: `A new resource "${originalFilename}" has been shared with your child.`,
+      });
+    }
 
     res.status(201).json({ message: 'Resource uploaded successfully', resource });
   } catch (error) {
