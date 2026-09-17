@@ -31,6 +31,7 @@ const questionBankRoutes = require("./routes/questionBank");
 const classScheduleRoutes = require("./routes/classSchedule");
 const coursePDFRoutes = require("./routes/coursePDF");
 const notificationRoutes = require("./routes/notifications");
+const notificationSettingsRoutes = require("./routes/notificationSettings");
 const teacherAttendanceRoutes = require("./routes/teacherAttendance");
 const sessionFeedbackRoutes = require("./routes/feedback");
 const feesRoutes = require("./routes/fees");
@@ -40,6 +41,8 @@ const salaryRoutes = require("./routes/salary");
 const expenseRoutes = require("./routes/expense");
 const leaveRoutes = require("./routes/leave");
 const autoPayRoutes = require("./routes/autoPay");
+const emailSettingsRoutes = require("./routes/emailSettings");
+const emailLogRoutes = require("./routes/emailLogs");
 
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
@@ -50,6 +53,9 @@ const { startTeacherNoShowCron } = require('./Schedular/teacherNoShow');
 const { startStaleApprovalsCron } = require('./Schedular/staleApprovals');
 const { startAutoChargeFeesCron } = require('./Schedular/autoChargeFees');
 const { startMissingLessonsCron } = require('./Schedular/checkMissingLessons');
+const { startClassRemindersCron } = require('./Schedular/classReminders');
+const { startDueSoonRemindersCron } = require('./Schedular/dueSoonReminders');
+const { startAnnouncementNotifierCron } = require('./Schedular/announcementNotifier');
 const isAuth = require('./middleware/is-auth');
 
 // Choose the environment
@@ -209,6 +215,9 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/questionBank", questionBankRoutes);
 app.use("/api/class-schedule", classScheduleRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/notification-settings", notificationSettingsRoutes);
+app.use("/api/email-settings", emailSettingsRoutes);
+app.use("/api/email-logs", emailLogRoutes);
 app.use("/api/teacher-attendance", teacherAttendanceRoutes);
 app.use("/api/session-feedback", sessionFeedbackRoutes);
 app.use("/api/fees", feesRoutes);
@@ -302,6 +311,16 @@ async function patchEnumColumns() {
     `UPDATE Students SET newClassTime = suitableHours WHERE suitableHours IS NOT NULL AND newClassTime IS NULL`,
     `ALTER TABLE Students DROP COLUMN flexibleHours`,
     `ALTER TABLE Students DROP COLUMN suitableHours`,
+    // ── Notification gap-fill ───────────────────────────────────────────────
+    `ALTER TABLE SupportRequests MODIFY COLUMN userType ENUM('student','teacher','parent') NOT NULL DEFAULT 'student'`,
+    `ALTER TABLE ClassSessions  ADD COLUMN reminderSentAt    DATETIME DEFAULT NULL`,
+    `ALTER TABLE Assignments    ADD COLUMN dueReminderSentAt DATETIME DEFAULT NULL`,
+    `ALTER TABLE Fees           ADD COLUMN dueReminderSentAt DATETIME DEFAULT NULL`,
+    `ALTER TABLE Announcements  ADD COLUMN notifiedAt        DATETIME DEFAULT NULL`,
+    // Mark every pre-existing announcement as already delivered. Without this the
+    // notifier cron finds the entire history unsent and floods every user's bell
+    // on the first boot after deploy. Must stay directly below the ADD COLUMN.
+    `UPDATE Announcements SET notifiedAt = NOW() WHERE notifiedAt IS NULL AND scheduledTime <= NOW()`,
   ];
   for (const sql of patches) {
     try {
@@ -316,6 +335,20 @@ sequelize
   .sync({ alter: true })
   .then(async () => {
     await patchEnumColumns();
+
+    // Email subsystem: indexes + Admin.email (raw SQL -- see emails/schema-patch.js
+    // for why these cannot be declared on the models), then seed one settings row
+    // per registry event. Seeding is INSERT IGNORE only, so it can never clobber
+    // an admin's toggle.
+    await require('./emails/schema-patch').patchEmailSchema();
+    await require('./emails/settings/seed').seedEmailSettings();
+    await require('./emails/settings/cache').start();
+
+    // In-app notification toggles: seed one settings row per registry event,
+    // then load the snapshot every notify() call reads. Seeding is INSERT
+    // IGNORE only, so it can never clobber an admin's toggle.
+    await require('./notifications/settings/seed').seedNotificationSettings();
+    await require('./notifications/settings/cache').start();
 
     // Start server (this calls socket.init internally)
     serverConfig.startServer(app);
@@ -336,6 +369,16 @@ sequelize
     startOverdueSalariesCron();
     startTeacherNoShowCron();
     startStaleApprovalsCron();
+    startClassRemindersCron();
+    startDueSoonRemindersCron();
+    startAnnouncementNotifierCron();
+
+    // Optional in-process email worker, for dev and single-process deploys.
+    // Refuses to run in production unless explicitly allowed, so nobody ships
+    // it by accident and then wonders why SMTP latency is in their p99.
+    if (process.env.EMAIL_WORKER_EMBEDDED === 'true') {
+      require('./emails/worker-embedded').start();
+    }
 
     console.log(`[app] Server started in ${env} mode.`);
   })
@@ -343,3 +386,39 @@ sequelize
     console.error('[app] DB sync failed — server will not start:', err);
     process.exit(1);
   });
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown
+//
+// PM2 restarts this process on every deploy. Without this, in-flight HTTP
+// requests and open socket connections are dropped mid-flight. Worth having
+// regardless of the email subsystem; added here because the worker needed the
+// same treatment and the asymmetry was hard to justify.
+// ---------------------------------------------------------------------------
+let shuttingDown = false;
+
+async function shutdown(signal) {
+  if (shuttingDown) return; // PM2 may send the signal more than once
+  shuttingDown = true;
+  console.log(`[app] ${signal} received, shutting down…`);
+
+  const force = setTimeout(() => {
+    console.error('[app] shutdown timed out, forcing exit.');
+    process.exit(1);
+  }, 15000);
+
+  try {
+    await require('./emails/settings/cache').stop();
+    const server = serverConfig.getServer && serverConfig.getServer();
+    if (server) await new Promise((resolve) => server.close(resolve));
+    await sequelize.close();
+    console.log('[app] shut down cleanly.');
+  } catch (err) {
+    console.error('[app] error during shutdown:', err.message);
+  } finally {
+    clearTimeout(force);
+    process.exit(0);
+  }
+}
+
+['SIGTERM', 'SIGINT'].forEach((sig) => process.on(sig, () => shutdown(sig)));
