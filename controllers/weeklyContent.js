@@ -7,7 +7,9 @@ const WeeklyContent = require('../models/WeeklyContent');
 const WeeklyResource = require('../models/WeeklyResources');
 const fs = require('fs').promises;
 const notify = require('../utils/notify');
+const { sendEmailEvent } = require("../emails");
 const notifyAdmins = require('../utils/notifyAdmins');
+const { notifyStudentAndParent } = require('../utils/notifyAudience');
 
 exports.uploadResource = async (req, res,next) => {
   console.log("course details id is:::",req.body.courseDetailId)
@@ -42,6 +44,12 @@ exports.uploadResource = async (req, res,next) => {
     notifyAdmins({
       title: 'Lesson Content Submitted',
       message: `New content uploaded for Week ${weeklyContent.weekNumber} — awaiting review.`,
+    });
+    sendEmailEvent('approval.content_decided', {
+      content: weeklyContent,
+      approved: false,
+      note: 'Submitted for review.',
+      teacherId: weeklyContent.teacherId,
     });
 
     res.status(201).json({ message: 'Weekly Resources uploaded successfully', resource });
@@ -170,13 +178,18 @@ exports.reviewContent = async (req, res, next) => {
           title: 'Lesson Content Approved',
           message: `Your content for Week ${weeklyContent.weekNumber} has been approved.`,
         });
+        sendEmailEvent('approval.content_decided', {
+          content: weeklyContent, approved: true, teacherId: courseDetail.teacherId,
+        });
       }
       if (courseDetail?.Student) {
-        const shareMsg = `New lesson content is available for Week ${weeklyContent.weekNumber}.`;
-        notify({ userId: courseDetail.Student.id, userType: 'student', title: 'New Lesson Content', message: shareMsg });
-        if (courseDetail.Student.parentId) {
-          notify({ userId: courseDetail.Student.parentId, userType: 'parent', title: 'New Lesson Content', message: shareMsg });
-        }
+        await notifyStudentAndParent({
+          studentId: courseDetail.Student.id,
+          title: 'New Lesson Content',
+          message: `New lesson content is available for Week ${weeklyContent.weekNumber}.`,
+          emailEvent: 'weekly_content.published',
+          emailContext: { content: weeklyContent, course: courseDetail.Course },
+        });
       }
     } else if (courseDetail?.teacherId) {
       notify({
@@ -185,6 +198,9 @@ exports.reviewContent = async (req, res, next) => {
         title: 'Lesson Content Needs Edits',
         message: `Your content for Week ${weeklyContent.weekNumber} needs edits${note ? `: ${note}` : '.'}`,
         priority: 'warning',
+      });
+      sendEmailEvent('approval.content_decided', {
+        content: weeklyContent, approved: false, note, teacherId: courseDetail.teacherId,
       });
     }
 
