@@ -8,16 +8,9 @@ const PlanChangeRequest = require('../models/PlanChangeRequest');
 const Admin = require('../models/Admin');
 const notify = require('../utils/notify');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { notifyStudentAndParent, displayName } = require('../utils/notifyAudience');
+const { sendEmailEvent } = require('../emails');
 
-// Notify a student and, if they have one on file, their parent with the same message.
-const notifyStudentAndParent = async ({ studentId, title, message, priority = 'info' }) => {
-    const student = await Student.findByPk(studentId, { attributes: ['id', 'parentId'] });
-    if (!student) return;
-    await notify({ userId: student.id, userType: 'student', title, message, priority });
-    if (student.parentId) {
-        await notify({ userId: student.parentId, userType: 'parent', title, message, priority });
-    }
-};
 
 const feeWithRelations = (id) =>
     Fee.findByPk(id, {
@@ -92,6 +85,18 @@ exports.createFee = async (req, res) => {
             createdById: req.userId || null,
         });
         const full = await feeWithRelations(fee.id);
+
+        await notifyStudentAndParent({
+            studentId,
+            title: 'New Fee Issued',
+            message: `A fee "${title}" of ${amount} has been issued`
+                + `${dueDate ? `, due ${dueDate}` : ''}.`,
+            parentMessage: `A fee "${title}" of ${amount} has been issued for your child`
+                + `${dueDate ? `, due ${dueDate}` : ''}.`,
+            emailEvent: 'fee.issued',
+            emailContext: { fee: full, student: full && full.Student },
+        });
+
         res.status(201).json({ fee: full });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -112,7 +117,11 @@ exports.updateFee = async (req, res) => {
 
         if (status !== undefined) fee.status = status;
         if (notes !== undefined) fee.notes = notes;
-        if (dueDate !== undefined) fee.dueDate = dueDate;
+        if (dueDate !== undefined) {
+            // A moved due date is a new deadline, so let the reminder fire again.
+            if (dueDate !== fee.dueDate) fee.dueReminderSentAt = null;
+            fee.dueDate = dueDate;
+        }
         if (paidDate !== undefined) fee.paidDate = paidDate || null;
         if (title !== undefined) fee.title = title;
         if (amount !== undefined) fee.amount = amount;
@@ -137,7 +146,25 @@ exports.updateFee = async (req, res) => {
                 planChangeReq.status = 'completed';
                 planChangeReq.paymentStatus = 'paid';
                 await planChangeReq.save();
+
+                const newPlan = await Plan.findByPk(planChangeReq.requestedPlanId);
+                sendEmailEvent('plan_change.completed', {
+                    request: planChangeReq,
+                    newPlan,
+                    studentId: planChangeReq.studentId,
+                });
             }
+        }
+
+        if (status === 'paid' && !wasAlreadyPaid) {
+            await notifyStudentAndParent({
+                studentId: fee.studentId,
+                title: 'Payment Receipt',
+                message: `Your payment for "${fee.title}" (${fee.amount}) has been recorded. Thank you.`,
+                parentMessage: `The payment for "${fee.title}" (${fee.amount}) has been recorded. Thank you.`,
+                emailEvent: 'fee.marked_paid',
+                emailContext: { fee },
+            });
         }
 
         const full = await feeWithRelations(fee.id);
@@ -172,6 +199,15 @@ exports.uploadInvoice = async (req, res) => {
 
         fee.invoicePath = `resources/${req.file.filename}`;
         await fee.save();
+
+        await notifyStudentAndParent({
+            studentId: fee.studentId,
+            title: 'Invoice Available',
+            message: `The invoice for "${fee.title}" is now available to download.`,
+            emailEvent: 'fee.invoice_uploaded',
+            emailContext: { fee },
+        });
+
         res.json({ fee, message: 'Invoice uploaded successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -194,12 +230,15 @@ exports.uploadProof = async (req, res) => {
         fee.rejectionReason = null;
         await fee.save();
 
-        const student = await Student.findByPk(fee.studentId, { attributes: ['firstName', 'lastName'] });
-        const studentName = student ? `${student.firstName} ${student.lastName}` : 'A student';
+        const student = await Student.findByPk(fee.studentId, {
+            attributes: ['firstName', 'lastName'],
+        });
+        const studentName = displayName(student, 'A student');
         notifyAdmins({
             title: 'Payment Proof Submitted',
             message: `${studentName} submitted payment proof for "${fee.title}" — awaiting review.`,
         });
+        sendEmailEvent('payment.proof_submitted', { fee, studentId: fee.studentId });
 
         res.json({ fee, message: 'Payment proof uploaded successfully' });
     } catch (error) {
@@ -225,6 +264,8 @@ exports.verifyProof = async (req, res) => {
             studentId: fee.studentId,
             title: 'Payment Confirmed',
             message: `Your payment for "${fee.title}" has been confirmed. Thank you!`,
+            emailEvent: 'payment.proof_verified',
+            emailContext: { fee },
         });
 
         const full = await feeWithRelations(fee.id);
@@ -251,6 +292,8 @@ exports.rejectProof = async (req, res) => {
             title: 'Payment Proof Mismatch',
             message: `The payment proof for "${fee.title}" doesn't match: ${reason}. Please resubmit.`,
             priority: 'warning',
+            emailEvent: 'payment.proof_rejected',
+            emailContext: { fee },
         });
 
         const full = await feeWithRelations(fee.id);
@@ -270,6 +313,8 @@ exports.remindProof = async (req, res) => {
             studentId: fee.studentId,
             title: 'Payment Proof Reminder',
             message: `Reminder: please share your payment proof for "${fee.title}".`,
+            emailEvent: 'payment.proof_reminder',
+            emailContext: { fee },
         });
 
         res.json({ message: 'Reminder sent' });
