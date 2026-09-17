@@ -12,6 +12,7 @@ const cron = require('node-cron');
 const { Op } = require('sequelize');
 const { Assignment, Quiz } = require('../models/association');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { sendEmailEvent } = require('../emails');
 
 const alerted = new Set(); // 'assignment-{id}' | 'quiz-{id}'
 
@@ -40,6 +41,11 @@ async function checkStaleApprovals() {
         message: `Assignment "${a.title}" has been waiting for approval for ${hours} hours. Please review.`,
         priority: 'warning',
       });
+      sendEmailEvent(
+        'approval.stale',
+        { kind: 'assignment', title: a.title, hours, entityId: a.id },
+        { occurredAt: new Date() }
+      );
     }
 
     // Stale quizzes — Quiz uses status 'pending_approval' or 'pending'
@@ -64,6 +70,11 @@ async function checkStaleApprovals() {
         message: `Quiz "${q.title}" has been waiting for approval for ${hours} hours. Please review.`,
         priority: 'warning',
       });
+      sendEmailEvent(
+        'approval.stale',
+        { kind: 'quiz', title: q.title, hours, entityId: q.id },
+        { occurredAt: new Date() }
+      );
     }
   } catch (err) {
     console.error('[staleApprovals] Error:', err.message);
