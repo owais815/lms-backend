@@ -18,6 +18,7 @@ const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
 const notify = require('../utils/notify');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { sendEmailEvent } = require('../emails');
 
 const NO_SHOW_GRACE_MINUTES = 1;
 const alertedSessions = new Set(); // in-memory dedup (resets on restart — acceptable)
@@ -57,6 +58,11 @@ async function checkTeacherNoShows() {
         message: `${teacherName} has not started the session "${session.title}" scheduled at ${session.startTime} (${NO_SHOW_GRACE_MINUTES}+ min overdue).`,
         priority: 'critical',
       });
+      sendEmailEvent(
+        'class.teacher_no_show',
+        { session, teacher: session.Teacher, overdueMinutes: NO_SHOW_GRACE_MINUTES },
+        { occurredAt: new Date() }
+      );
 
       if (session.Student) {
         const lateMsg = `Your class "${session.title}" is starting a little late — the teacher hasn't joined yet.`;
