@@ -67,6 +67,12 @@ const Fee = sequelize.define('Fee', {
         references: { model: 'Admins', key: 'id' },
         onDelete: 'SET NULL',
     },
+    // Set when the due-soon reminder goes out; nulled when dueDate changes.
+    dueReminderSentAt: {
+        type: Sequelize.DATE,
+        allowNull: true,
+        defaultValue: null,
+    },
 });
 
 module.exports = Fee;
