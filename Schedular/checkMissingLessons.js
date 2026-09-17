@@ -6,6 +6,7 @@ const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
 const Courses = require('../models/Course');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { sendEmailEvent } = require('../emails');
 
 const GRACE_DAYS_INTO_WEEK = 3; // give the teacher a few days into the week before flagging
 const alertedWeeks = new Set(); // in-memory dedup, keyed `${courseDetailId}:${weekNumber}` — resets on restart (acceptable)
@@ -55,6 +56,17 @@ async function checkMissingLessons() {
                 message: `${teacherName} hasn't uploaded Week ${progress.currentWeek} content for ${studentName}'s ${enrollment.Course?.courseName || 'course'} yet.`,
                 priority: 'warning',
             });
+            sendEmailEvent(
+                'approval.content_missing',
+                {
+                    weekNumber: progress.currentWeek,
+                    course: enrollment.Course,
+                    student: enrollment.Student,
+                    teacherId: enrollment.teacherId,
+                    entityId: enrollment.id,
+                },
+                { occurredAt: new Date() }
+            );
         }
     } catch (error) {
         console.error('[checkMissingLessons] Error:', error.message);
