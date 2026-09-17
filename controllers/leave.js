@@ -4,7 +4,13 @@ const ClassSession = require('../models/ClassSession');
 const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
 const notify = require('../utils/notify');
+const { sendEmailEvent } = require("../emails");
 const notifyAdmins = require('../utils/notifyAdmins');
+const {
+    findSessionsForStudent,
+    notifyStudentsAndParents,
+    displayName,
+} = require('../utils/notifyAudience');
 
 const dateRangeWhere = (startDate, endDate) => ({
     [Op.gte]: startDate,
@@ -45,15 +51,20 @@ exports.logLeave = async (req, res) => {
                 include: [{ model: Student, attributes: ['id', 'parentId'] }],
             });
             const teacher = await Teacher.findByPk(personId, { attributes: ['firstName', 'lastName'] });
-            const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Your teacher';
+            const teacherName = displayName(teacher, 'Your teacher');
 
             await Promise.all(sessions.map(async (session) => {
                 if (!session.Student) return;
-                const msg = `${teacherName} is on leave on ${session.date}; a substitute may be assigned — check your schedule.`;
-                await notify({ userId: session.Student.id, userType: 'student', title: 'Teacher on Leave', message: msg });
-                if (session.Student.parentId) {
-                    await notify({ userId: session.Student.parentId, userType: 'parent', title: 'Teacher on Leave', message: msg });
-                }
+                await notifyStudentsAndParents({
+                    students: [session.Student],
+                    title: 'Teacher on Leave',
+                    message: `${teacherName} is on leave on ${session.date}; a substitute may be assigned — check your schedule.`,
+                    parentMessage: `${teacherName} is on leave on ${session.date}; a substitute may be assigned for your child's class.`,
+                    emailEvent: 'leave.teacher_logged',
+                    emailContext: {
+                        leave, teacher, teacherId: personId, affectedSessions: sessions.length,
+                    },
+                });
             }));
 
             if (sessions.length > 0) {
@@ -64,13 +75,14 @@ exports.logLeave = async (req, res) => {
                 });
             }
         } else {
-            const sessions = await ClassSession.findAll({
-                where: { studentId: personId, status: 'scheduled', date: range },
+            const sessions = await findSessionsForStudent(personId, {
+                status: 'scheduled',
+                date: range,
             });
             const student = await Student.findByPk(personId, { attributes: ['firstName', 'lastName', 'parentId'] });
-            const studentName = student ? `${student.firstName} ${student.lastName}` : 'A student';
+            const studentName = displayName(student, 'A student');
 
-            const teacherIds = [...new Set(sessions.map((s) => s.teacherId))];
+            const teacherIds = [...new Set(sessions.map((s) => s.teacherId).filter(Boolean))];
             await Promise.all(teacherIds.map((teacherId) => notify({
                 userId: teacherId,
                 userType: 'teacher',
@@ -84,6 +96,13 @@ exports.logLeave = async (req, res) => {
                     userType: 'parent',
                     title: 'Leave Noted',
                     message: `We've noted ${studentName}'s leave from ${startDate}${endDate ? ` to ${endDate}` : ''}.`,
+                });
+                sendEmailEvent('leave.student_logged', {
+                    leave,
+                    student,
+                    studentId: personId,
+                    teachers: teacherIds.map((id) => ({ id })),
+                    affectedSessions: sessions.length,
                 });
             }
 
