@@ -4,6 +4,8 @@ const { Op } = require('sequelize');
 const Salary = require('../models/Salary');
 const Teacher = require('../models/Teacher');
 const Admin = require('../models/Admin');
+const notify = require('../utils/notify');
+const { sendEmailEvent } = require('../emails');
 
 const salaryWithRelations = (id) =>
     Salary.findByPk(id, {
@@ -65,6 +67,20 @@ exports.createSalary = async (req, res) => {
         });
 
         const result = await salaryWithRelations(salary.id);
+
+        await notify({
+            userId: teacherId,
+            userType: 'teacher',
+            title: salary.status === 'paid' ? 'Salary Paid' : 'Salary Issued',
+            message: salary.status === 'paid'
+                ? `Your salary of ${amount} for ${month} has been paid.`
+                : `A salary of ${amount} for ${month} has been recorded${dueDate ? `, due ${dueDate}` : ''}.`,
+        });
+        sendEmailEvent(
+            salary.status === 'paid' ? 'salary.paid' : 'salary.generated',
+            { salary, teacherId }
+        );
+
         res.status(201).json({ salary: result });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -78,6 +94,7 @@ exports.updateSalary = async (req, res) => {
         if (!salary) return res.status(404).json({ message: 'Salary record not found' });
 
         const { amount, month, dueDate, status, paidDate, notes } = req.body;
+        const previousStatus = salary.status;
 
         if (amount   !== undefined) salary.amount  = amount;
         if (month    !== undefined) salary.month   = month;
@@ -92,6 +109,19 @@ exports.updateSalary = async (req, res) => {
         }
 
         await salary.save();
+
+        if (salary.status !== previousStatus) {
+            await notify({
+                userId: salary.teacherId,
+                userType: 'teacher',
+                title: salary.status === 'paid' ? 'Salary Paid' : 'Salary Updated',
+                message: salary.status === 'paid'
+                    ? `Your salary of ${salary.amount} for ${salary.month} has been paid.`
+                    : `Your salary record for ${salary.month} is now marked ${salary.status}.`,
+                priority: salary.status === 'overdue' ? 'warning' : 'info',
+            });
+        }
+
         const result = await salaryWithRelations(salary.id);
         res.json({ salary: result });
     } catch (error) {
@@ -140,6 +170,8 @@ exports.uploadProof = async (req, res) => {
         await salary.save();
 
         const result = await salaryWithRelations(salary.id);
+        sendEmailEvent('salary.proof_uploaded', { salary, teacherId: salary.teacherId });
+
         res.json({ salary: result, message: 'Proof uploaded successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
