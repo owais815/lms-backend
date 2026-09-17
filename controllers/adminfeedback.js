@@ -3,6 +3,7 @@ const Student = require('../models/Student');
 const CourseDetails = require('../models/CourseDetails');
 const { AdminFeedback, Courses, Teacher } = require('../models/association');
 const { Op } = require('sequelize');
+const { notifyStudentAndParent } = require('../utils/notifyAudience');
 
 
 exports.addFeedback = async (req, res) => {
@@ -39,6 +40,15 @@ exports.addFeedback = async (req, res) => {
         teacherId
       });
   
+      await notifyStudentAndParent({
+        studentId,
+        title: 'Progress Feedback Added',
+        message: `Your progress report has been updated${progressInGrades ? ` — grade ${progressInGrades}` : ''}`
+          + `${areasToImprove ? `, focus area: ${areasToImprove}` : ''}.`,
+        parentMessage: `Your child's progress report has been updated${progressInGrades ? ` — grade ${progressInGrades}` : ''}`
+          + `${areasToImprove ? `, focus area: ${areasToImprove}` : ''}.`,
+      });
+
       return res.status(201).json({ message: 'Feedback Submitted', adminFeedback });
     } catch (error) {
       console.log("adminFeedback updating", error);
