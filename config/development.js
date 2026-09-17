@@ -1,6 +1,9 @@
 // config/development.js
 const http = require('http');
 
+// Kept so app.js's SIGTERM handler can close the listener on shutdown.
+let activeServer = null;
+
 exports.startServer = (app) => {
     try {
         const port = process.env.HTTP_PORT || 8080;
@@ -13,11 +16,14 @@ exports.startServer = (app) => {
         // so we do NOT attach any io.on('connection') here to avoid duplicates.
         require('../socket').init(server);
 
+        activeServer = server;
         return server;
     } catch (error) {
         console.error('[dev] Error starting server:', error);
         throw error;
     }
 };
+
+exports.getServer = () => activeServer;
 
 exports.port = 8080;
