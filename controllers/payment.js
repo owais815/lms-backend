@@ -2,6 +2,8 @@ const Payment = require('../models/Payment');
 const PlanChangeRequest = require('../models/PlanChangeRequest');
 const Student = require('../models/Student');
 const { Op, Sequelize } = require("sequelize");
+const { notifyStudentAndParent } = require('../utils/notifyAudience');
+const { sendEmailEvent } = require("../emails");
 
 exports.recordPayment = async (req, res) => {
     const { studentId, amount, purpose } = req.body;
@@ -18,6 +20,18 @@ exports.recordPayment = async (req, res) => {
             studentId,
             amount,
             purpose,
+        });
+
+        await notifyStudentAndParent({
+            studentId,
+            title: 'Payment Receipt',
+            message: `A payment of ${amount}${purpose ? ` for ${purpose}` : ''} has been recorded. Thank you.`,
+            parentMessage: `A payment of ${amount}${purpose ? ` for ${purpose}` : ''} has been recorded for your child. Thank you.`,
+            emailEvent: 'payment.receipt_issued',
+            emailContext: {
+                payment: { id: payment.id, amount, method: purpose || null, paidOn: payment.createdAt },
+                student,
+            },
         });
 
         res.status(201).json({
@@ -111,6 +125,13 @@ exports.addMonthlyFee = async (req, res) => {
             studentId,
             amount,
             purpose: 'Monthly Fee',
+        });
+
+        await notifyStudentAndParent({
+            studentId,
+            title: 'Payment Receipt',
+            message: `A monthly fee payment of ${amount} has been recorded. Thank you.`,
+            parentMessage: `A monthly fee payment of ${amount} has been recorded for your child. Thank you.`,
         });
 
         res.status(201).json({
