@@ -32,6 +32,8 @@ const MyBookmark = require("../models/Bookmarks/MyBookmark");
 const AdminFeedback = require("../models/AdminFeedback/AdminFeedback");
 const MakeUpClass = require("../models/MakeupClasses/MakeUpClass");
 const notifyAdmins = require('../utils/notifyAdmins');
+const { sendEmailEvent } = require('../emails');
+const notify = require('../utils/notify');
 
 exports.signup= (req,res,next)=>{
     const errors = validationResult(req);
@@ -348,6 +350,21 @@ exports.updateTeacherPasswordByUsername = async (req, res, next) => {
         // Update the teacher's password
         await teacher.update({ password: hashPwd });
 
+        await notify({
+            userId: teacher.id,
+            userType: 'teacher',
+            title: 'Password Changed',
+            message: 'Your password was changed by an administrator. '
+                + 'If this was not expected, contact support immediately.',
+            priority: 'warning',
+        });
+        await sendEmailEvent('account.password_changed', {
+            user: teacher,
+            userRole: 'teacher',
+            teacher,
+            changedByAdmin: true,
+        }, { occurredAt: new Date() });
+
         res.status(200).json({ message: 'Teacher password updated successfully.', teacher });
     } catch (err) {
         if (!err.statusCode) {
@@ -414,6 +431,21 @@ exports.updateStudentPasswordByUsername = async (req, res, next) => {
         // Update the student's password
         await student.update({ password: hashPwd });
 
+        await notify({
+            userId: student.id,
+            userType: 'student',
+            title: 'Password Changed',
+            message: 'Your password was changed by an administrator. '
+                + 'If this was not expected, contact support immediately.',
+            priority: 'warning',
+        });
+        await sendEmailEvent('account.password_changed', {
+            user: student,
+            userRole: 'student',
+            student,
+            changedByAdmin: true,
+        }, { occurredAt: new Date() });
+
         res.status(200).json({ message: 'Student password updated successfully.', student });
     } catch (err) {
         if (!err.statusCode) {
@@ -446,6 +478,21 @@ exports.updateParentPasswordByUsername = async (req, res, next) => {
 
         // Update the parent's password
         await parent.update({ password: hashPwd });
+
+        await notify({
+            userId: parent.id,
+            userType: 'parent',
+            title: 'Password Changed',
+            message: 'Your password was changed by an administrator. '
+                + 'If this was not expected, contact support immediately.',
+            priority: 'warning',
+        });
+        await sendEmailEvent('account.password_changed', {
+            user: parent,
+            userRole: 'parent',
+            parent,
+            changedByAdmin: true,
+        }, { occurredAt: new Date() });
 
         res.status(200).json({ message: 'Parent password updated successfully.', parent });
     } catch (err) {
@@ -644,6 +691,17 @@ exports.createAnnouncement = async (req, res) => {
             return res.status(400).json({ error: 'userIds must be a non-empty array.' });
         }
 
+        if (!['student', 'teacher', 'parent'].includes(userType)) {
+            return res.status(400).json({ error: 'userType must be student, teacher or parent.' });
+        }
+
+        // daysToLive is a day count; expirationDate is a DATETIME that the
+        // cleanup cron compares against now(). Convert rather than store the count.
+        const days = Number(daysToLive);
+        const expiresAt = Number.isFinite(days) && days > 0
+            ? new Date(Date.now() + days * 86400000)
+            : null;
+
         // Create announcements for each user in the array
         const announcements = await Promise.all(
             userIds.map(userId =>
@@ -654,7 +712,7 @@ exports.createAnnouncement = async (req, res) => {
                     userType,
                     userId,
                     type,
-                    expirationDate:daysToLive
+                    expirationDate: expiresAt
                 })
             )
         );
@@ -669,7 +727,7 @@ exports.getAnnouncements = async (req, res) => {
     try {
         const { userType,userId } = req.body;
 
-        if (!userType || (userType !== 'student' && userType !== 'teacher')) {
+        if (!userType || !['student', 'teacher', 'parent'].includes(userType)) {
             return res.status(400).json({ error: 'Invalid user type specified.' });
         }
 
@@ -971,6 +1029,17 @@ exports.createAdmin = async (req, res) => {
             roleId: roleRecord.id
         });
 
+        await sendEmailEvent('account.created_admin', {
+            user: { id: admin.id, firstName: name, username, email: email || null },
+            roleName: roleRecord.role,
+            // Admin rows may have no address yet, and this is the one email the
+            // new admin needs, so the recipient is passed explicitly rather
+            // than resolved from the (possibly empty) Admins table.
+            __recipients: email
+                ? [{ email, name, role: 'admin', userId: admin.id, source: 'db' }]
+                : [],
+        }, { occurredAt: new Date() });
+
         res.status(201).json({ message: "Admin created successfully", admin });
     } catch (error) {
         res.status(500).json({ message: "Error creating admin", error: error.message });
@@ -1108,6 +1177,12 @@ exports.assignRightsToRole = async (req, res) => {
             priority: 'critical',
             superAdminOnly: true,
         }).catch(() => {});
+        sendEmailEvent('security.role_permissions_changed', {
+            roleName: roleExists.name,
+            permissionCount: rights.length,
+            role: roleExists,
+            entityId: roleExists.id,
+        }, { occurredAt: new Date() });
 
         res.status(201).json({ message: "Rights assigned successfully" });
     } catch (error) {
