@@ -31,6 +31,12 @@ const Assignment = sequelize.define('Assignment', {
     status: {
       type: DataTypes.ENUM('pending', 'active', 'rejected'),
       defaultValue: 'active'
+    },
+    // Set when the due-soon reminder goes out; nulled when dueDate changes.
+    dueReminderSentAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null
     }
   });
 
