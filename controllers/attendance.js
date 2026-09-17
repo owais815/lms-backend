@@ -8,9 +8,68 @@ const ClassSession = require('../models/ClassSession');
 const ClassSessionStudent = require('../models/ClassSessionStudent');
 const Teacher = require('../models/Teacher');
 const notify = require('../utils/notify');
+const { sendEmailEvent } = require("../emails");
 const notifyAdmins = require('../utils/notifyAdmins');
+const {
+  notifyStudentAndParent,
+  notifyStudentsAndParents,
+  displayName,
+} = require('../utils/notifyAudience');
 
 // ─── Mark single attendance (legacy endpoint, kept for backward compat) ───────
+// Attendance fires on every student, every class, every day. Notifying on
+// 'Present' would bury the bell in messages nobody reads, so only absences and
+// lateness go out — and only when the status actually changed, because teachers
+// re-save the same sheet repeatedly.
+const ATTENDANCE_ALERTS = {
+  Absent: {
+    title: 'Marked Absent',
+    priority: 'warning',
+    message: (label) => `You were marked absent for ${label}.`,
+    parentMessage: (label, name) => `${name} was marked absent for ${label}.`,
+  },
+  Late: {
+    title: 'Marked Late',
+    priority: 'info',
+    message: (label) => `You were marked late for ${label}.`,
+    parentMessage: (label, name) => `${name} was marked late for ${label}.`,
+  },
+};
+
+// Send the student/parent alert for a single attendance change, if the new
+// status warrants one. Never throws — attendance must save even if notifying fails.
+const alertAttendance = async ({ studentId, status, sessionId, date }) => {
+  try {
+    const rule = ATTENDANCE_ALERTS[status];
+    if (!rule) return;
+
+    let label = `your class on ${date}`;
+    if (sessionId) {
+      const session = await ClassSession.findByPk(sessionId, { attributes: ['title', 'date'] });
+      if (session) label = `"${session.title}" on ${session.date}`;
+    }
+
+    const student = await Student.findByPk(studentId, {
+      attributes: ['id', 'firstName', 'lastName', 'parentId'],
+    });
+    if (!student) return;
+
+    await notifyStudentAndParent({
+      studentId: student.id,
+      title: rule.title,
+      message: rule.message(label),
+      parentMessage: rule.parentMessage(label, displayName(student, 'Your child')),
+      priority: rule.priority,
+      // Only absences get an email. A 'Late' mark is worth a bell notification
+      // but not an inbox interruption, and there is no registry event for it.
+      emailEvent: status === 'Absent' ? 'class.marked_absent' : undefined,
+      emailContext: { student, date, session: sessionId ? { id: sessionId } : null, entityId: sessionId || null },
+    });
+  } catch (err) {
+    console.error('alertAttendance error (non-fatal):', err.message);
+  }
+};
+
 exports.markAttendance = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -30,9 +89,13 @@ exports.markAttendance = async (req, res, next) => {
     });
 
     if (attendance) {
+      const previousStatus = attendance.status;
       attendance.status = status;
       if (sessionId) attendance.sessionId = sessionId;
       await attendance.save();
+      if (status !== previousStatus) {
+        await alertAttendance({ studentId, status, sessionId, date });
+      }
       return res.status(200).json({
         message: 'Attendance record updated successfully',
         attendance,
@@ -46,6 +109,7 @@ exports.markAttendance = async (req, res, next) => {
         status,
         sessionId: sessionId || null
       });
+      await alertAttendance({ studentId, status, sessionId, date });
       return res.status(201).json({
         message: 'Attendance marked successfully',
         attendance,
@@ -72,6 +136,8 @@ exports.bulkMarkAttendance = async (req, res, next) => {
       return res.status(404).json({ message: 'Session not found' });
     }
 
+    const changed = { Absent: [], Late: [] };
+
     const results = await Promise.all(
       records.map(async ({ studentId, courseDetailsId, status }) => {
         const [record, created] = await Attendance.findOrCreate({
@@ -84,14 +150,43 @@ exports.bulkMarkAttendance = async (req, res, next) => {
             status: status || 'Present'
           }
         });
+        const previousStatus = created ? null : record.status;
         if (!created) {
           record.status = status || record.status;
           if (courseDetailsId) record.courseDetailsId = courseDetailsId;
           await record.save();
         }
+        // Re-saving an unchanged sheet must stay silent.
+        if (record.status !== previousStatus && changed[record.status]) {
+          changed[record.status].push(studentId);
+        }
         return record;
       })
     );
+
+    try {
+      const label = `"${session.title}" on ${session.date}`;
+      for (const [status, studentIds] of Object.entries(changed)) {
+        if (studentIds.length === 0) continue;
+        const rule = ATTENDANCE_ALERTS[status];
+        const students = await Student.findAll({
+          where: { id: studentIds },
+          attributes: ['id', 'firstName', 'lastName', 'parentId'],
+        });
+        // Parents need the child named; students do not.
+        for (const student of students) {
+          await notifyStudentsAndParents({
+            students: [student],
+            title: rule.title,
+            message: rule.message(label),
+            parentMessage: rule.parentMessage(label, displayName(student, 'Your child')),
+            priority: rule.priority,
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
+    }
 
     return res.status(200).json({
       message: `Attendance marked for ${results.length} student(s)`,
@@ -360,19 +455,24 @@ exports.markLate = async (req, res, next) => {
       await attendance.save();
     }
 
-    const student = await Student.findByPk(studentId, { attributes: ['firstName', 'lastName', 'parentId'] });
-    const studentName = student ? `${student.firstName} ${student.lastName}` : 'A student';
+    const student = await Student.findByPk(studentId, {
+      attributes: ['id', 'firstName', 'lastName', 'parentId'],
+    });
+    const studentName = displayName(student, 'A student');
 
     await notifyAdmins({
       title: 'Student Running Late',
       message: `${studentName} hasn't joined "${session.title}" yet.`,
     });
-    if (student?.parentId) {
-      await notify({
-        userId: student.parentId,
-        userType: 'parent',
+
+    if (student) {
+      await notifyStudentAndParent({
+        studentId: student.id,
         title: 'Student Running Late',
-        message: `${studentName} hasn't joined "${session.title}" yet — please check in.`,
+        message: `You have been marked late for "${session.title}" — please join as soon as you can.`,
+        parentMessage: `${studentName} hasn't joined "${session.title}" yet — please check in.`,
+        emailEvent: 'class.student_late',
+        emailContext: { session, student },
       });
     }
 
