@@ -11,6 +11,8 @@ const Student = require("../models/Student");
 const CourseDetails = require("../models/CourseDetails");
 const { QuizAttempt, SubmittedAssignment, Assignment, Quiz, Attendance, UpcomingClass, Courses } = require("../models/association");
 const Parent = require("../models/Parent");
+const notify = require('../utils/notify');
+const { sendEmailEvent } = require("../emails");
 
 exports.signup = async (req, res, next) => {
   const errors = validationResult(req);
@@ -37,6 +39,12 @@ exports.signup = async (req, res, next) => {
     if (studentIds.length > 0) {
       await Student.update({ parentId: parent.id }, { where: { id: studentIds } });
     }
+
+    await sendEmailEvent('account.created_parent', {
+      user: { id: parent.id, firstName, lastName, username, email },
+      tempPassword: password,
+      parent: { id: parent.id },
+    }, { occurredAt: new Date() });
 
     res.status(200).json({ message: "Parent saved successfully!", userId: parent.id });
   } catch (err) {
@@ -277,6 +285,17 @@ exports.toggleStatus = async (req, res, next) => {
       return next(err);
     }
     await parent.update({ isActive: !parent.isActive });
+
+    await notify({
+      userId: parent.id,
+      userType: 'parent',
+      title: parent.isActive ? 'Account Reactivated' : 'Account Deactivated',
+      message: parent.isActive
+        ? 'Your account has been reactivated. You can sign in again.'
+        : 'Your account has been deactivated. Contact support if this is unexpected.',
+      priority: parent.isActive ? 'info' : 'warning',
+    });
+
     res.status(200).json({ isActive: parent.isActive });
   } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
