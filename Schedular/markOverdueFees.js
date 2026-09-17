@@ -4,6 +4,7 @@ const Fee = require('../models/Fee');
 const Student = require('../models/Student');
 const notify = require('../utils/notify');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { notifyStudentsAndParents } = require('../utils/notifyAudience');
 
 /**
  * Start the daily overdue-fees cron job.
@@ -46,16 +47,25 @@ function startOverdueFeesCron() {
                 });
             }
 
-            await Promise.all(
-                overdueFees.map(async (fee) => {
-                    if (!fee.Student) return;
-                    const msg = `Your fee "${fee.title}" is now overdue.`;
-                    await notify({ userId: fee.Student.id, userType: 'student', title: 'Fee Overdue', message: msg, priority: 'warning' });
-                    if (fee.Student.parentId) {
-                        await notify({ userId: fee.Student.parentId, userType: 'parent', title: 'Fee Overdue', message: msg, priority: 'warning' });
-                    }
-                })
-            );
+            // One notification per fee — a student with several overdue fees
+            // should hear about each of them by name.
+            for (const fee of overdueFees) {
+                if (!fee.Student) continue;
+                await notifyStudentsAndParents({
+                    students: [fee.Student],
+                    title: 'Fee Overdue',
+                    message: `Your fee "${fee.title}" is now overdue.`,
+                    parentMessage: `The fee "${fee.title}" is now overdue.`,
+                    priority: 'warning',
+                    emailEvent: 'fee.overdue',
+                    emailContext: { fee, student: fee.Student },
+                    // occurredAt is the DUE date, not now: without it, the
+                    // first live run of this cron would email every fee that
+                    // has ever gone overdue. The go-live guard compares
+                    // against this.
+                    emailOptions: { occurredAt: fee.dueDate },
+                });
+            }
         } catch (error) {
             console.error('[markOverdueFees] Error during overdue check:', error);
         }
