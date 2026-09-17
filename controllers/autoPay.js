@@ -2,6 +2,8 @@ const AutoPayMethod = require('../models/AutoPayMethod');
 const Student = require('../models/Student');
 const notify = require('../utils/notify');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { sendEmailEvent } = require('../emails');
+const { notifyStudentAndParent, displayName } = require('../utils/notifyAudience');
 
 // GET /api/auto-pay/student/:studentId — current card-on-file, if any
 exports.getCardOnFile = async (req, res) => {
@@ -40,6 +42,10 @@ exports.addCardOnFile = async (req, res) => {
             title: 'Card on File Added',
             message: `A card ending in ${last4 || '····'} has been saved for automatic fee payments.`,
         });
+        // The parent is in this event's audience even though the in-app
+        // notification above reaches only the student: a card attached to a
+        // child's account is something a parent must always hear about.
+        sendEmailEvent('autopay.card_added', { method, studentId });
 
         res.status(201).json({ method });
     } catch (error) {
@@ -62,6 +68,7 @@ exports.removeCardOnFile = async (req, res) => {
             title: 'Card Removed',
             message: 'Your card on file was removed. You\'ll need to pay fees manually and share proof going forward.',
         });
+        sendEmailEvent('autopay.card_removed', { method, studentId: method.studentId });
 
         res.json({ method });
     } catch (error) {
@@ -84,14 +91,18 @@ exports.deactivateAutoPay = async (method) => {
     const student = await Student.findByPk(method.studentId, { attributes: ['id', 'firstName', 'lastName', 'parentId'] });
     const msg = 'Auto-pay was deactivated after repeated failed attempts — please pay your fees manually.';
     if (student) {
-        await notify({ userId: student.id, userType: 'student', title: 'Auto-Pay Deactivated', message: msg, priority: 'warning' });
-        if (student.parentId) {
-            await notify({ userId: student.parentId, userType: 'parent', title: 'Auto-Pay Deactivated', message: msg, priority: 'warning' });
-        }
+        await notifyStudentAndParent({
+            studentId: student.id,
+            title: 'Auto-Pay Deactivated',
+            message: msg,
+            priority: 'warning',
+            emailEvent: 'autopay.deactivated',
+            emailContext: { method, student },
+        });
     }
     await notifyAdmins({
         title: 'Auto-Pay Deactivated',
-        message: `Auto-pay for ${student ? `${student.firstName} ${student.lastName}` : `student #${method.studentId}`} was deactivated after repeated failures.`,
+        message: `Auto-pay for ${displayName(student, `student #${method.studentId}`)} was deactivated after repeated failures.`,
         priority: 'warning',
     });
 };
