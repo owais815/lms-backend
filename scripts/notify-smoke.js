@@ -30,6 +30,7 @@ const ClassSession = require('../models/ClassSession');
 const ClassSchedule = require('../models/ClassSchedule');
 const ClassSessionStudent = require('../models/ClassSessionStudent');
 const Announcements = require('../models/Announcements');
+const Plan = require('../models/Plan');
 
 const notifyBulk = require('../utils/notifyBulk');
 const {
@@ -89,8 +90,19 @@ async function seed() {
     firstName: `${TAG}_Teacher`, lastName: 'One',
     email: `${TAG.toLowerCase()}.teacher@example.test`,
     username: `${TAG.toLowerCase()}.teacher`, password: 'x',
+    // Both NOT NULL on Teachers -- omitting them aborts the run before any
+    // assertion gets to execute.
+    contact: '00000000000', cnic: '00000-0000000-0',
   });
   created.teachers.push(teacher);
+
+  // Students.planId is NOT NULL and references Plans. Reuse whatever plan the
+  // database already has: it is read, never written, and the fixture students
+  // that reference it are deleted in cleanup.
+  const plan = await Plan.findOne({ order: [['id', 'ASC']] });
+  if (!plan) {
+    throw new Error('No rows in Plans — seed at least one plan before running this smoke test.');
+  }
 
   // withParent: has a parent on file. noParent: parentId stays null — the case
   // that must never produce a parent notification row.
@@ -98,11 +110,13 @@ async function seed() {
     firstName: `${TAG}_Kid`, lastName: 'WithParent',
     email: `${TAG.toLowerCase()}.kid1@example.test`,
     username: `${TAG.toLowerCase()}.kid1`, password: 'x', parentId: parent.id,
+    planId: plan.id,
   });
   const noParent = await Student.create({
     firstName: `${TAG}_Kid`, lastName: null,
     email: `${TAG.toLowerCase()}.kid2@example.test`,
     username: `${TAG.toLowerCase()}.kid2`, password: 'x', parentId: null,
+    planId: plan.id,
   });
   created.students.push(withParent, noParent);
 
