@@ -17,6 +17,12 @@ const SessionFeedback = require('../models/SessionFeedback');
 const callingAppService = require('../services/callingAppService');
 const socket = require('../socket');
 const notify = require('../utils/notify');
+const { sendEmailEvent } = require("../emails");
+const {
+  resolveSessionAudience,
+  notifySessionAudience,
+  notifyStudentsAndParents,
+} = require('../utils/notifyAudience');
 
 // ---------------------------------------------------------------------------
 // Color helpers
@@ -154,6 +160,43 @@ exports.createSchedule = async (req, res) => {
     const totalSessionCount = await generateSessions(schedule, selectedStudentIds);
     const lastSchedule = schedule;
 
+    // One notification per person for the whole schedule, not one per session.
+    try {
+      const when = recurrenceType && recurrenceType !== 'one-time'
+        ? `${totalSessionCount} session(s) from ${startDate}`
+        : `${startDate} at ${startTime}`;
+      const scheduledMsg = `A new class "${title}" has been scheduled — ${when}.`;
+
+      await notify({
+        userId: teacherId,
+        userType: 'teacher',
+        title: 'Class Scheduled',
+        message: `You have been assigned a new class "${title}" — ${when}.`,
+      });
+
+      const students = selectedStudentIds.length > 0
+        ? await Student.findAll({
+            where: { id: selectedStudentIds },
+            attributes: ['id', 'firstName', 'lastName', 'parentId'],
+          })
+        : (await resolveSessionAudience({ id: null, studentId: null, courseId, teacherId })).students;
+
+      await notifyStudentsAndParents({
+        students,
+        title: 'Class Scheduled',
+        message: scheduledMsg,
+        parentMessage: `A new class "${title}" has been scheduled for your child — ${when}.`,
+        emailEvent: 'class.scheduled',
+        emailContext: {
+          session: { id: lastSchedule && lastSchedule.id, title, date: startDate, startTime },
+          teacherId,
+          entityId: lastSchedule && lastSchedule.id,
+        },
+      });
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
+    }
+
     return res.status(201).json({
       message: 'Schedule created successfully',
       schedule: lastSchedule,
@@ -228,6 +271,11 @@ exports.proposeSession = async (req, res) => {
         })
       )
     );
+    sendEmailEvent('approval.session_proposal_pending', {
+      schedule: { id: lastSchedule && lastSchedule.id, title },
+      teacher,
+      entityId: lastSchedule && lastSchedule.id,
+    });
 
     return res.status(201).json({ message: 'Session proposed — awaiting admin approval', schedule: lastSchedule });
   } catch (err) {
@@ -255,11 +303,57 @@ exports.approveSchedule = async (req, res) => {
         title: 'Session Approved',
         message: `Your proposed session "${schedule.title}" has been approved.`,
       });
+      sendEmailEvent('approval.session_proposal_decided', {
+        schedule, approved: true, teacherId: schedule.teacherId,
+      });
     }
 
     return res.json({ message: 'Schedule approved', schedule });
   } catch (err) {
     console.error('approveSchedule error:', err);
+    return res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// PUT /api/class-schedule/:id/reject  — Admin rejects a teacher proposal
+// Counterpart to approveSchedule: without it a proposing teacher never hears back.
+// ---------------------------------------------------------------------------
+exports.rejectSchedule = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const schedule = await ClassSchedule.findByPk(id);
+    if (!schedule) return res.status(404).json({ message: 'Schedule not found' });
+    if (schedule.status !== 'pending') {
+      return res.status(400).json({ message: 'Only pending proposals can be rejected' });
+    }
+
+    await schedule.update({ status: 'cancelled' });
+
+    // Sessions are generated on approval, but guard against any that exist.
+    await ClassSession.update(
+      { status: 'cancelled', cancellationReason: reason || 'Proposal rejected by admin' },
+      { where: { scheduleId: id, status: 'scheduled' } }
+    );
+
+    if (schedule.teacherId) {
+      await notify({
+        userId: schedule.teacherId,
+        userType: 'teacher',
+        title: 'Session Proposal Rejected',
+        message: `Your proposed session "${schedule.title}" was not approved`
+          + (reason ? `: ${reason}` : '.'),
+        priority: 'warning',
+      });
+      sendEmailEvent('approval.session_proposal_decided', {
+        schedule, approved: false, teacherId: schedule.teacherId,
+      });
+    }
+
+    return res.json({ message: 'Schedule proposal rejected', schedule });
+  } catch (err) {
+    console.error('rejectSchedule error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
@@ -284,8 +378,13 @@ exports.cancelSchedule = async (req, res) => {
       attributes: ['id'],
     });
 
+    // Earliest affected date, read before the update flips the rows.
+    const firstAffected = await ClassSession.min('date', {
+      where: { scheduleId: id, date: { [Op.gte]: today }, status: 'scheduled' },
+    });
+
     // Cancel all future scheduled sessions; reset sessionStatus for live ones
-    await ClassSession.update(
+    const [cancelledCount] = await ClassSession.update(
       { status: 'cancelled', cancellationReason: reason || 'Schedule cancelled by admin' },
       { where: { scheduleId: id, date: { [Op.gte]: today }, status: 'scheduled' } }
     );
@@ -312,6 +411,51 @@ exports.cancelSchedule = async (req, res) => {
       } catch (socketErr) {
         console.error('Socket emit error (non-fatal):', socketErr.message);
       }
+    }
+
+    // A recurring schedule can hold hundreds of sessions (generateSessions caps
+    // at 500), so notify each person ONCE about the whole cancellation rather
+    // than once per session. Resolve the audience from the schedule, not the rows.
+    try {
+      const scope = firstAffected ? ` from ${firstAffected} onward` : '';
+      const count = cancelledCount || 0;
+      const summary = `The recurring class "${schedule.title}" has been cancelled.`
+        + ` ${count} upcoming session(s)${scope} have been removed from your schedule.`
+        + (reason ? ` Reason: ${reason}` : '');
+
+      if (schedule.teacherId) {
+        await notify({
+          userId: schedule.teacherId,
+          userType: 'teacher',
+          title: 'Schedule Cancelled',
+          message: summary,
+          priority: 'warning',
+        });
+      }
+
+      // Resolve from a real session of this schedule so junction-assigned
+      // students are found; falling back to the schedule alone would resolve
+      // to the whole course and over-notify.
+      const sampleSession = await ClassSession.findOne({
+        where: { scheduleId: id },
+        order: [['date', 'ASC']],
+      });
+      const audience = await resolveSessionAudience(
+        sampleSession || {
+          id: null,
+          studentId: schedule.studentId,
+          courseId: schedule.courseId,
+          teacherId: schedule.teacherId,
+        }
+      );
+      await notifyStudentsAndParents({
+        students: audience.students,
+        title: 'Schedule Cancelled',
+        message: summary,
+        priority: 'warning',
+      });
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
     }
 
     return res.json({ message: 'Schedule and future sessions cancelled' });
@@ -364,24 +508,16 @@ exports.cancelSession = async (req, res) => {
     try {
       const cancelMsg = `The class "${session.title}" on ${session.date} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`;
 
-      // Notify the assigned teacher
-      await notify({ userId: session.teacherId, userType: 'teacher', title: 'Class Cancelled', message: cancelMsg });
-
-      if (session.courseId && session.teacherId) {
-        const enrolledStudents = await CourseDetails.findAll({
-          where: { courseId: session.courseId, teacherId: session.teacherId },
-          include: [{ model: Student, attributes: ['id', 'parentId'] }],
-        });
-        await Promise.all(
-          enrolledStudents.map(async (cd) => {
-            if (!cd.Student) return;
-            await notify({ userId: cd.Student.id, userType: 'student', title: 'Class Cancelled', message: cancelMsg });
-            if (cd.Student.parentId) {
-              await notify({ userId: cd.Student.parentId, userType: 'parent', title: 'Class Cancelled', message: cancelMsg });
-            }
-          })
-        );
-      }
+      await notifySessionAudience({
+        session,
+        title: 'Class Cancelled',
+        message: cancelMsg,
+        teacherMessage: cancelMsg,
+        includeTeacher: true,
+        priority: 'warning',
+        emailEvent: 'class.cancelled',
+        emailContext: { session },
+      });
     } catch (notifErr) {
       console.error('Notification error (non-fatal):', notifErr.message);
     }
@@ -1172,6 +1308,21 @@ exports.endSession = async (req, res) => {
       console.error('Socket emit error (non-fatal):', socketErr.message);
     }
 
+    // The students were in the class, so "it ended" is not news. The lesson
+    // note is, and it is the only thing a parent can act on afterwards.
+    if (lessonTitle) {
+      try {
+        await notifySessionAudience({
+          session,
+          title: 'Lesson Note Added',
+          message: `Lesson note for "${session.title}": ${lessonTitle}`,
+          parentMessage: `Lesson note for your child's class "${session.title}": ${lessonTitle}`,
+        });
+      } catch (notifErr) {
+        console.error('Notification error (non-fatal):', notifErr.message);
+      }
+    }
+
     return res.json({ message: 'Session ended', sessionStatus: 'ended', status: 'completed' });
   } catch (err) {
     console.error('endSession error:', err);
@@ -1328,6 +1479,12 @@ exports.updateSession = async (req, res) => {
     if (meetingLink !== undefined) updates.meetingLink = meetingLink;
     if (isTeacherChanging) updates.teacherId = Number(teacherId);
 
+    // A moved session is a new start time, so let the reminder fire again.
+    const isRescheduled =
+      (date !== undefined && String(date) !== String(session.date)) ||
+      (startTime !== undefined && String(startTime) !== String(session.startTime));
+    if (isRescheduled) updates.reminderSentAt = null;
+
     await session.update(updates);
 
     // Handle student assignment via junction table
@@ -1356,6 +1513,7 @@ exports.updateSession = async (req, res) => {
           title: 'Removed from Session',
           message: `You have been unassigned from the class ${sessionLabel}. Please check with the admin for details.`,
         });
+        sendEmailEvent('class.teacher_unassigned', { session, teacherId: oldTeacherId });
 
         // 2. Notify new teacher — assigned to session
         await notify({
@@ -1364,33 +1522,26 @@ exports.updateSession = async (req, res) => {
           title: 'Assigned to Session',
           message: `You have been assigned to teach the class ${sessionLabel}. Please check your schedule.`,
         });
+        sendEmailEvent('class.teacher_assigned', { session, teacherId: Number(teacherId) });
 
         // 3. Notify old teacher's students + parents — their teacher changed
-        if (session.courseId) {
-          const oldEnrollments = await CourseDetails.findAll({
-            where: { courseId: session.courseId, teacherId: oldTeacherId },
-            include: [{ model: Student, attributes: ['id', 'parentId'] }],
-          });
-          await Promise.all(
-            oldEnrollments.map(async (cd) => {
-              if (!cd.Student) return;
-              await notify({
-                userId: cd.Student.id,
-                userType: 'student',
-                title: 'Session Teacher Changed',
-                message: `The teacher for your class ${sessionLabel} has been changed. Please check your schedule.`,
-              });
-              if (cd.Student.parentId) {
-                await notify({
-                  userId: cd.Student.parentId,
-                  userType: 'parent',
-                  title: 'Session Teacher Changed',
-                  message: `The teacher for your child's class ${sessionLabel} has been changed.`,
-                });
-              }
-            })
-          );
-        }
+        const changedAudience = await resolveSessionAudience({
+          id: session.id,
+          studentId: session.studentId,
+          courseId: session.courseId,
+          teacherId: oldTeacherId,
+        });
+        await notifyStudentsAndParents({
+          students: changedAudience.students,
+          title: 'Session Teacher Changed',
+          message: `The teacher for your class ${sessionLabel} has been changed. Please check your schedule.`,
+          parentMessage: `The teacher for your child's class ${sessionLabel} has been changed.`,
+          emailEvent: 'class.teacher_changed',
+          emailContext: { session, teacherId: Number(teacherId) },
+          // The bucket carries the session's current time, so a later change
+          // to the same session is a new email rather than a suppressed one.
+          emailOptions: { dedupBucket: `teacher:${teacherId}` },
+        });
       } else {
         // Regular update — notify the (unchanged) teacher
         const changedFields = Object.keys(updates).join(', ');
@@ -1398,21 +1549,22 @@ exports.updateSession = async (req, res) => {
         await notify({ userId: oldTeacherId, userType: 'teacher', title: 'Class Updated', message: updateMsg });
 
         // Notify students + parents of unchanged teacher
-        if (session.courseId && oldTeacherId) {
-          const enrolledStudents = await CourseDetails.findAll({
-            where: { courseId: session.courseId, teacherId: oldTeacherId },
-            include: [{ model: Student, attributes: ['id', 'parentId'] }],
-          });
-          await Promise.all(
-            enrolledStudents.map(async (cd) => {
-              if (!cd.Student) return;
-              await notify({ userId: cd.Student.id, userType: 'student', title: 'Class Updated', message: updateMsg });
-              if (cd.Student.parentId) {
-                await notify({ userId: cd.Student.parentId, userType: 'parent', title: 'Class Updated', message: updateMsg });
-              }
-            })
-          );
-        }
+        const updatedAudience = await resolveSessionAudience({
+          id: session.id,
+          studentId: session.studentId,
+          courseId: session.courseId,
+          teacherId: oldTeacherId,
+        });
+        await notifyStudentsAndParents({
+          students: updatedAudience.students,
+          title: 'Class Updated',
+          message: updateMsg,
+          emailEvent: 'class.rescheduled',
+          emailContext: { session, teacherId: oldTeacherId },
+          emailOptions: {
+            dedupBucket: `at:${String(session.date).slice(0, 10)}T${String(session.startTime).slice(0, 5)}`,
+          },
+        });
       }
     } catch (notifErr) {
       console.error('Notification error (non-fatal):', notifErr.message);
@@ -1580,18 +1732,9 @@ exports.deleteSession = async (req, res) => {
     // -----------------------------------------------------------------------
     const deleteMsg = `The class "${session.title}" on ${session.date} has been permanently deleted by the admin.`;
 
-    // Assigned students via junction table; fall back to all enrolled for group sessions
-    let studentsToNotify = session.Students || [];
-    const parentIds = new Set();
-    if (studentsToNotify.length === 0 && session.courseId) {
-      // Group session — find all enrolled students
-      const enrollments = await CourseDetails.findAll({
-        where: { courseId: session.courseId, teacherId: session.teacherId },
-        include: [{ model: Student, attributes: ['id', 'parentId'] }],
-      });
-      studentsToNotify = enrollments.map((cd) => cd.Student).filter(Boolean);
-    }
-    studentsToNotify.forEach((s) => { if (s.parentId) parentIds.add(s.parentId); });
+    // Must run before the delete below — it destroys the junction rows the
+    // audience is resolved from.
+    const deleteAudience = await resolveSessionAudience(session);
 
     // -----------------------------------------------------------------------
     // Delete all child records in dependency order
@@ -1613,30 +1756,23 @@ exports.deleteSession = async (req, res) => {
     // Notify affected actors (non-fatal)
     // -----------------------------------------------------------------------
     try {
-      const notifyPromises = [];
-
-      // Notify teacher
       if (session.teacherId) {
-        notifyPromises.push(
-          notify({ userId: session.teacherId, userType: 'teacher', title: 'Session Deleted', message: deleteMsg })
-        );
+        await notify({
+          userId: session.teacherId,
+          userType: 'teacher',
+          title: 'Session Deleted',
+          message: deleteMsg,
+          priority: 'warning',
+        });
       }
-
-      // Notify each student
-      for (const student of studentsToNotify) {
-        notifyPromises.push(
-          notify({ userId: student.id, userType: 'student', title: 'Session Deleted', message: deleteMsg })
-        );
-      }
-
-      // Notify parents
-      for (const parentId of parentIds) {
-        notifyPromises.push(
-          notify({ userId: parentId, userType: 'parent', title: 'Session Deleted', message: deleteMsg })
-        );
-      }
-
-      await Promise.all(notifyPromises);
+      await notifyStudentsAndParents({
+        students: deleteAudience.students,
+        title: 'Session Deleted',
+        message: deleteMsg,
+        priority: 'warning',
+        emailEvent: 'class.deleted',
+        emailContext: { session },
+      });
     } catch (notifErr) {
       console.error('Notification error (non-fatal):', notifErr.message);
     }
