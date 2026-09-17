@@ -58,6 +58,33 @@ jobs:
             CALLING_APP_API_URL=${{ secrets.CALLING_APP_API_URL_DEV }}
             CALLING_APP_API_SECRET=${{ secrets.CALLING_APP_API_SECRET }}
             LMS_API_URL=${{ secrets.LMS_API_URL_DEV }}
+
+            # ── Email subsystem ──────────────────────────────────────────────
+            # SMTP credentials live here and NOT in the database. Point dev at a
+            # catch-all mailbox or a Mailpit instance, never at the real relay.
+            SMTP_HOST=${{ secrets.SMTP_HOST_DEV }}
+            SMTP_PORT=${{ secrets.SMTP_PORT_DEV }}
+            SMTP_SECURE=${{ secrets.SMTP_SECURE_DEV }}
+            SMTP_USER=${{ secrets.SMTP_USER_DEV }}
+            SMTP_PASS=${{ secrets.SMTP_PASS_DEV }}
+
+            EMAIL_FROM_NAME=${{ secrets.EMAIL_FROM_NAME }}
+            EMAIL_FROM_ADDRESS=${{ secrets.EMAIL_FROM_ADDRESS }}
+            EMAIL_APP_BASE_URL=${{ secrets.EMAIL_APP_BASE_URL_DEV }}
+            APP_NAME=${{ secrets.APP_NAME }}
+            ADMIN_ALERT_EMAILS=${{ secrets.ADMIN_ALERT_EMAILS_DEV }}
+
+            # Dev defaults to sandbox so real addresses in a copied database can
+            # never be mailed by accident -- everything lands in EMAIL_SANDBOX_TO.
+            EMAIL_ENABLED=true
+            EMAIL_MODE=sandbox
+            EMAIL_SANDBOX_TO=${{ secrets.EMAIL_SANDBOX_TO }}
+            EMAIL_CONCURRENCY=2
+            EMAIL_MAX_PER_MINUTE=30
+            EMAIL_WORKER_EMBEDDED=false
+
+            REDIS_URL=${{ secrets.REDIS_URL_DEV }}
+            DB_POOL_MAX=10
             ENVEOF
 
             # ── Pull latest dev branch ───────────────────────────────────────
@@ -73,10 +100,24 @@ jobs:
             pnpm install --prod --frozen-lockfile
 
             # ── Restart with PM2 ─────────────────────────────────────────────
+            # Kept as explicit app names rather than ecosystem.config.js, because
+            # the dev and prod instances share this box and the ecosystem file
+            # declares the production app names.
+            DEV_ENV="NODE_ENV=development HTTP_PORT=8082 DB_USER=${{ secrets.DB_USER }} DB_PASSWORD=${{ secrets.DB_PASSWORD }} DB_NAME=${{ secrets.DB_NAME_DEV }} DB_HOST=${{ secrets.DB_HOST }}"
+
             if pm2 list | grep -q "lms-backend-dev"; then
-              NODE_ENV=development HTTP_PORT=8082 DB_USER=${{ secrets.DB_USER }} DB_PASSWORD=${{ secrets.DB_PASSWORD }} DB_NAME=${{ secrets.DB_NAME_DEV }} DB_HOST=${{ secrets.DB_HOST }} pm2 restart lms-backend-dev --update-env
+              env $DEV_ENV pm2 restart lms-backend-dev --update-env
             else
-              NODE_ENV=development HTTP_PORT=8082 DB_USER=${{ secrets.DB_USER }} DB_PASSWORD=${{ secrets.DB_PASSWORD }} DB_NAME=${{ secrets.DB_NAME_DEV }} DB_HOST=${{ secrets.DB_HOST }} pm2 start app.js --name lms-backend-dev
+              env $DEV_ENV pm2 start app.js --name lms-backend-dev
+            fi
+
+            # Email worker. kill_timeout gives the drain time to finish; without
+            # it PM2 SIGKILLs after 1600ms. Jobs are lease-protected either way,
+            # so a hard kill costs latency rather than correctness.
+            if pm2 list | grep -q "lms-email-worker-dev"; then
+              env $DEV_ENV DB_POOL_MAX=6 pm2 restart lms-email-worker-dev --update-env
+            else
+              env $DEV_ENV DB_POOL_MAX=6 pm2 start worker.js --name lms-email-worker-dev --kill-timeout 30000
             fi
 
             pm2 save
