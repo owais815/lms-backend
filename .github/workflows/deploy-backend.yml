@@ -58,6 +58,52 @@ jobs:
             CALLING_APP_API_URL=${{ secrets.CALLING_APP_API_URL }}
             CALLING_APP_API_SECRET=${{ secrets.CALLING_APP_API_SECRET }}
             LMS_API_URL=${{ secrets.LMS_API_URL }}
+
+            # ── Email subsystem ──────────────────────────────────────────────
+            # SMTP credentials live here and NOT in the database: the DB is
+            # dumped for backups, and keeping the whole tuple in env means one
+            # rotation point (GitHub Secrets -> .env -> pm2 restart).
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=${{ secrets.SMTP_PORT }}
+            SMTP_SECURE=${{ secrets.SMTP_SECURE }}
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASS=${{ secrets.SMTP_PASS }}
+            SMTP_ALLOWED_FROM_DOMAINS=${{ secrets.SMTP_ALLOWED_FROM_DOMAINS }}
+
+            # Sender identity and branding defaults. Admins can override most of
+            # these at runtime in Settings -> Email Notifications.
+            EMAIL_FROM_NAME=${{ secrets.EMAIL_FROM_NAME }}
+            EMAIL_FROM_ADDRESS=${{ secrets.EMAIL_FROM_ADDRESS }}
+            EMAIL_REPLY_TO=${{ secrets.EMAIL_REPLY_TO }}
+            EMAIL_APP_BASE_URL=${{ secrets.EMAIL_APP_BASE_URL }}
+            APP_NAME=${{ secrets.APP_NAME }}
+            APP_LOGO_URL=${{ secrets.APP_LOGO_URL }}
+            SUPPORT_EMAIL=${{ secrets.SUPPORT_EMAIL }}
+
+            # Admin alert recipients, in addition to admins with an address on
+            # their profile. Comma separated.
+            ADMIN_ALERT_EMAILS=${{ secrets.ADMIN_ALERT_EMAILS }}
+
+            # Sending behaviour. EMAIL_MODE stays 'log' until someone
+            # deliberately switches it to live -- see docs/EMAIL.md.
+            EMAIL_ENABLED=true
+            EMAIL_MODE=log
+            EMAIL_SANDBOX_TO=${{ secrets.EMAIL_SANDBOX_TO }}
+            EMAIL_TIMEZONE=${{ secrets.EMAIL_TIMEZONE }}
+            EMAIL_CURRENCY=${{ secrets.EMAIL_CURRENCY }}
+            EMAIL_CONCURRENCY=3
+            EMAIL_MAX_PER_MINUTE=60
+            EMAIL_MAX_ENQUEUE_PER_DISPATCH=200
+            EMAIL_MAX_SENDS_PER_HOUR=500
+            EMAIL_WORKER_EMBEDDED=false
+
+            # Leave REDIS_URL empty to use the MySQL queue driver. Setting it
+            # switches the queue to BullMQ with no other change.
+            REDIS_URL=${{ secrets.REDIS_URL }}
+
+            # Connection pool. The API and the worker are separate processes
+            # sharing one database, so each gets its own ceiling.
+            DB_POOL_MAX=15
             ENVEOF
 
             # ── Pull latest code (force-reset to avoid merge conflicts) ────────
@@ -72,12 +118,11 @@ jobs:
             command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
             pnpm install --prod --frozen-lockfile
 
-            # ── Restart with PM2 (pass critical vars explicitly to avoid cache issues) ──
-            if pm2 describe lms-backend > /dev/null 2>&1; then
-              NODE_ENV=production DB_USER=${{ secrets.DB_USER_PROD }} DB_PASSWORD=${{ secrets.DB_PASSWORD_PROD }} DB_NAME=${{ secrets.DB_NAME }} DB_HOST=${{ secrets.DB_HOST }} pm2 restart lms-backend --update-env
-            else
-              NODE_ENV=production DB_USER=${{ secrets.DB_USER_PROD }} DB_PASSWORD=${{ secrets.DB_PASSWORD_PROD }} DB_NAME=${{ secrets.DB_NAME }} DB_HOST=${{ secrets.DB_HOST }} pm2 start app.js --name lms-backend
-            fi
+            # ── Restart with PM2 ─────────────────────────────────────────────
+            # ecosystem.config.js defines BOTH the API and the email worker, and
+            # sets kill_timeout: 30000 -- PM2's 1600ms default would SIGKILL the
+            # worker mid-drain and make its graceful shutdown decorative.
+            NODE_ENV=production             DB_USER=${{ secrets.DB_USER_PROD }}             DB_PASSWORD=${{ secrets.DB_PASSWORD_PROD }}             DB_NAME=${{ secrets.DB_NAME }}             DB_HOST=${{ secrets.DB_HOST }}               pm2 startOrReload ecosystem.config.js --update-env
 
             pm2 save
 
