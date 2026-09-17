@@ -42,6 +42,16 @@ const Loss = require("./Loss");
 const AutoPayMethod = require("./AutoPayMethod");
 const LeaveNotice = require("./LeaveNotice");
 
+// Email subsystem. These MUST be required here: sync({ alter: true }) only
+// creates tables for models reachable from this file, and a model that is not
+// would fail confusingly at the first send rather than loudly at boot.
+const EmailLog = require("./EmailLog");
+const EmailJob = require("./EmailJob");
+const EmailSetting = require("./EmailSetting");
+const EmailEventSetting = require("./EmailEventSetting");
+const EmailSettingsMeta = require("./EmailSettingsMeta");
+const EmailSuppression = require("./EmailSuppression");
+
 // Setup associations
 // Expense associations
 Expense.belongsTo(ExpenseCategory, { foreignKey: 'categoryId', as: 'Category' });
@@ -59,6 +69,13 @@ Student.hasMany(AutoPayMethod, { foreignKey: 'studentId' });
 
 // LeaveNotice associations
 LeaveNotice.belongsTo(Admin, { foreignKey: 'createdById', as: 'CreatedBy' });
+
+// Email subsystem associations.
+// EmailJob -> EmailLog is a real FK: deleting a log row must not orphan a job.
+// EmailLog.recipientUserId is deliberately NOT a FK -- it points at Students,
+// Parents, Teachers or Admins depending on recipientRole.
+EmailJob.belongsTo(EmailLog, { foreignKey: 'emailLogId', onDelete: 'CASCADE' });
+EmailLog.hasMany(EmailJob, { foreignKey: 'emailLogId' });
 
 // Salary associations
 Teacher.hasMany(Salary, { foreignKey: 'teacherId' });
@@ -280,4 +297,10 @@ module.exports = {
   Loss,
   AutoPayMethod,
   LeaveNotice,
+  EmailLog,
+  EmailJob,
+  EmailSetting,
+  EmailEventSetting,
+  EmailSettingsMeta,
+  EmailSuppression,
 };
