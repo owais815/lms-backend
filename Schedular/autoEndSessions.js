@@ -19,9 +19,8 @@ const { Op } = require('sequelize');
 const ClassSession = require('../models/ClassSession');
 const callingAppService = require('../services/callingAppService');
 const socket = require('../socket');
-const notify = require('../utils/notify');
 const notifyAdmins = require('../utils/notifyAdmins');
-const CourseDetails = require('../models/CourseDetails');
+const { sendEmailEvent } = require("../emails");
 
 const GRACE_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -105,28 +104,16 @@ async function autoEndEmptySessions() {
         message: `Session "${session.title}" was automatically ended — all participants left without closing the session.`,
         priority: 'warning',
       }).catch(() => {});
+      sendEmailEvent(
+        'class.session_auto_ended',
+        { session, teacherId: session.teacherId },
+        { occurredAt: new Date() }
+      );
 
-      // Notify enrolled students (non-fatal)
-      try {
-        if (session.courseId && session.teacherId) {
-          const enrolled = await CourseDetails.findAll({
-            where: { courseId: session.courseId, teacherId: session.teacherId },
-            attributes: ['studentId'],
-          });
-          await Promise.all(
-            enrolled.map((cd) =>
-              notify({
-                userId: cd.studentId,
-                userType: 'student',
-                title: 'Class Ended',
-                message: `The class "${session.title}" has ended.`,
-              })
-            )
-          );
-        }
-      } catch (notifErr) {
-        console.warn('[autoEndSessions] Notification error (non-fatal):', notifErr.message);
-      }
+      // Deliberately no student notification here. An auto-ended session has no
+      // lesson note attached (that only comes from a teacher ending it by hand),
+      // so "the class ended" tells a student who was just in it nothing useful.
+      // The admin warning above is the actionable half.
     }
   } catch (err) {
     console.error('[autoEndSessions] Unexpected error:', err.message);
