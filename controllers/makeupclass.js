@@ -1,23 +1,9 @@
 const { MakeUpClass, CourseDetails, Teacher, Student, Courses } = require("../models/association");
-const Notification = require("../models/Notifications");
-const { getIO } = require("../socket");
-const { onlineUsers } = require("../SocketMethods/HandleConnection");
-const { sendNotifications } = require("../utils/notificationUtil");
 const notify = require("../utils/notify");
+const { sendEmailEvent } = require("../emails");
 const notifyAdmins = require("../utils/notifyAdmins");
+const { notifyStudentAndParent } = require("../utils/notifyAudience");
 
-
-const waitForIO = async () => {
-  let io;
-  while (!io) {
-    try {
-      io = await getIO(); // Await the promise returned by getIO()
-    } catch (err) {
-      await new Promise((resolve) => setTimeout(resolve, 100)); // Wait 100ms before retrying
-    }
-  }
-  return io;
-};
 
 exports.scheduleClass = async (req, res) => {
   const { reason, status, teacherId, studentId, courseDetailsId, date, time } = req.body;
@@ -53,21 +39,27 @@ exports.scheduleClass = async (req, res) => {
     // Determine the student's name to display
     const studentName = student.nameForTeacher || `${student.firstName} ${student.lastName}`;
 
-    // Create a notification for the teacher
-        // Send notifications using the utility function
-        await sendNotifications(
-          teacherId,
-          studentId,
-          studentName,
-          formattedDate,
-          formattedTime,
-          `Make up class for ${studentName} scheduled on ${formattedDate} at ${formattedTime}.`,
-          `Your make up class has been scheduled on ${formattedDate} at ${formattedTime}.`
-        );
+    await notify({
+      userId: teacherId,
+      userType: 'teacher',
+      title: 'Makeup Class Scheduled',
+      message: `Make up class for ${studentName} scheduled on ${formattedDate} at ${formattedTime}.`,
+    });
+    await notify({
+      userId: studentId,
+      userType: 'student',
+      title: 'Makeup Class Scheduled',
+      message: `Your make up class has been scheduled on ${formattedDate} at ${formattedTime}.`,
+    });
+
 
     notifyAdmins({
       title: 'Makeup Class Requested',
       message: `A makeup class for ${studentName} on ${formattedDate} at ${formattedTime} is awaiting approval.`,
+    });
+    sendEmailEvent('makeup.requested', {
+      makeup: { id: newClass.id, date: formattedDate, time: formattedTime },
+      studentId, teacherId,
     });
 
     res.status(201).json({ message: 'Makeup class scheduled successfully', data: newClass });
@@ -143,14 +135,17 @@ exports.updateStatus = async (req, res) => {
         title: 'Makeup Class Approved',
         message: `The makeup class on ${formattedDate} at ${formattedTime} has been approved.`,
       });
-      const student = await Student.findByPk(makeupClass.studentId, { attributes: ['id', 'parentId'] });
-      const confirmMsg = `Your makeup class is confirmed for ${formattedDate} at ${formattedTime}.`;
-      if (student) {
-        notify({ userId: student.id, userType: 'student', title: 'Makeup Class Confirmed', message: confirmMsg });
-        if (student.parentId) {
-          notify({ userId: student.parentId, userType: 'parent', title: 'Makeup Class Confirmed', message: confirmMsg });
-        }
-      }
+      await notifyStudentAndParent({
+        studentId: makeupClass.studentId,
+        title: 'Makeup Class Confirmed',
+        message: `Your makeup class is confirmed for ${formattedDate} at ${formattedTime}.`,
+        parentMessage: `Your child's makeup class is confirmed for ${formattedDate} at ${formattedTime}.`,
+        emailEvent: 'makeup.approved',
+        emailContext: {
+          makeup: { id: makeupClass.id, date: formattedDate, time: formattedTime },
+          teacherId: makeupClass.teacherId,
+        },
+      });
     } else if (status === 'Rejected') {
       notify({
         userId: makeupClass.teacherId,
@@ -158,6 +153,10 @@ exports.updateStatus = async (req, res) => {
         title: 'Makeup Class Rejected',
         message: `Your makeup request for ${formattedDate} at ${formattedTime} was rejected${adminReason ? `: ${adminReason}` : '.'}`,
         priority: 'warning',
+      });
+      sendEmailEvent('makeup.rejected', {
+        makeup: { id: makeupClass.id, date: formattedDate, time: formattedTime, adminReason },
+        teacherId: makeupClass.teacherId,
       });
     }
 
