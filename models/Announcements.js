@@ -36,6 +36,12 @@ const Announcements = sequelize.define('Announcements', {
         type: DataTypes.ENUM('payment','class','general','assessment'),
         allowNull: false,
         defaultValue:'general'
+    },
+    // Set once the announcement has been pushed to the notification bell.
+    notifiedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: null
     }
 });
 
