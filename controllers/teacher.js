@@ -12,7 +12,9 @@ const StudentFeedback = require("../models/StudentFeedback");
 const UpcomingClass = require("../models/UpcomingClasses");
 const Courses = require("../models/Course");
 const CourseDetails = require("../models/CourseDetails");
-const { sendNotifications } = require("../utils/notificationUtil");
+const notify = require("../utils/notify");
+const { sendEmailEvent } = require("../emails");
+const { notifyStudentAndParent } = require("../utils/notifyAudience");
 const UpcomingCourses = require("../models/UpcomingCourse");
 const MakeUpClass = require("../models/MakeupClasses/MakeUpClass");
 const ClassSchedule = require("../models/ClassSchedule");
@@ -60,6 +62,12 @@ exports.signup = (req, res, next) => {
       return user.save();
     })
     .then((result) => {
+      sendEmailEvent('account.created_teacher', {
+        user: { id: result.id, firstName, lastName, username, email },
+        tempPassword: password,
+        teacher: { id: result.id },
+      }, { occurredAt: new Date() });
+
       res
         .status(200)
         .json({ message: "Teacher saved successfully.!", userId: result.id });
@@ -722,6 +730,13 @@ exports.addFeedback = async (req, res, next) => {
       feedback,
       rating,
     });
+    await notifyStudentAndParent({
+      studentId,
+      title: 'Teacher Feedback Received',
+      message: `Your teacher left you feedback${rating ? ` (${rating}/5)` : ''}.`,
+      parentMessage: `Your child's teacher left feedback${rating ? ` (${rating}/5)` : ''}.`,
+    });
+
     res
       .status(201)
       .json({ message: "Feedback added successfully", feedback: newFeedback });
@@ -760,6 +775,14 @@ exports.respondToFeedback = async (req, res, next) => {
     }
     feedback.responded = true;
     await feedback.save();
+
+    sendEmailEvent('feedback.teacher_responded', {
+      feedback,
+      studentId: feedback.studentId,
+      teacherId,
+      entityId: feedback.id,
+    });
+
     res.status(200).json({ message: "Feedback marked as responded" });
   } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
@@ -835,15 +858,18 @@ exports.addUpcomingClass = async (req, res, next) => {
     // Determine the student's name to display
     const studentName = student.nameForTeacher || `${student.firstName} ${student.lastName}`;
 
-    await sendNotifications(
-      teacherId,
-      studentId,
-      studentName,
-      formattedDate,
-      formattedTime,
-      `Class for ${studentName} scheduled on ${formattedDate} at ${formattedTime}.`,
-      `Your class has been scheduled on ${formattedDate} at ${formattedTime}.`
-    );
+    await notify({
+      userId: teacherId,
+      userType: 'teacher',
+      title: 'Class Scheduled',
+      message: `Class for ${studentName} scheduled on ${formattedDate} at ${formattedTime}.`,
+    });
+    await notify({
+      userId: studentId,
+      userType: 'student',
+      title: 'Class Scheduled',
+      message: `Your class has been scheduled on ${formattedDate} at ${formattedTime}.`,
+    });
 
     res.status(201).json({
       message: existingClass ? "Upcoming class updated successfully" : "Upcoming class added successfully",
