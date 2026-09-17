@@ -1,6 +1,8 @@
 const { Op } = require('sequelize');
 const TeacherAttendance = require('../models/TeacherAttendance');
 const Teacher = require('../models/Teacher');
+const notifyAdmins = require('../utils/notifyAdmins');
+const { displayName } = require('../utils/notifyAudience');
 
 // ─── Check In ─────────────────────────────────────────────────────────────────
 exports.checkIn = async (req, res, next) => {
@@ -38,6 +40,13 @@ exports.checkIn = async (req, res, next) => {
       await record.save();
     }
 
+    if (created) {
+      await notifyAdmins({
+        title: 'Teacher Check-In',
+        message: `${displayName(teacher, `Teacher #${teacherId}`)} checked in at ${now}.`,
+      });
+    }
+
     return res.status(created ? 201 : 200).json({
       message: created ? 'Checked in successfully' : 'Check-in time updated',
       record
@@ -70,6 +79,15 @@ exports.checkOut = async (req, res, next) => {
 
     record.checkOutTime = now;
     await record.save();
+
+    const teacher = await Teacher.findByPk(teacherId, {
+      attributes: ['id', 'firstName', 'lastName'],
+    });
+    await notifyAdmins({
+      // 'Check-out' matches the bell's icon keyword.
+      title: 'Teacher Check-out',
+      message: `${displayName(teacher, `Teacher #${teacherId}`)} checked out at ${now}.`,
+    });
 
     return res.status(200).json({
       message: 'Checked out successfully',
