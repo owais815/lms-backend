@@ -5,12 +5,15 @@
  * Usage:
  *   node scripts/notify-smoke.js           run all cases, clean up after
  *   node scripts/notify-smoke.js --keep    leave the created rows for inspection
+ *   node scripts/notify-smoke.js --force   allow NODE_ENV=production (don't)
  *
  * It creates its own throwaway students/parents/sessions (all prefixed SMOKE_) and
- * deletes them at the end. Every notification it causes is deleted too, identified
- * by id range, so an existing Notifications table is left untouched.
+ * deletes them at the end, along with the notifications addressed to them. Rows
+ * belonging to anyone else are never touched.
  *
- * Safe to run against a dev database. Do not run against production.
+ * Safe to run against a dev database. It refuses to start with
+ * NODE_ENV=production, and its cleanup only ever deletes rows belonging to the
+ * fixture users it created.
  */
 
 require('../models/association');
@@ -37,11 +40,21 @@ const {
 } = require('../utils/notifyAudience');
 
 const KEEP = process.argv.includes('--keep');
+const FORCE = process.argv.includes('--force');
 const TAG = 'SMOKE';
+
+// This script writes fixture rows and then deletes them. On a database with real
+// users that is a bad idea even when the deletes are correctly scoped, so refuse
+// outright unless someone insists.
+if (process.env.NODE_ENV === 'production' && !FORCE) {
+  console.error('Refusing to run with NODE_ENV=production.');
+  console.error('Point DB_NAME at a development database, or pass --force if you');
+  console.error('genuinely mean to create and delete fixture rows in production.');
+  process.exit(2);
+}
 
 const results = [];
 const created = { students: [], parents: [], teachers: [], courses: [], courseDetails: [], sessions: [], schedules: [], announcements: [] };
-let notificationFloor = 0;
 
 // ─── Assertion plumbing ──────────────────────────────────────────────────────
 
@@ -65,8 +78,6 @@ const typesOf = (rows) => rows.map((r) => r.userType).sort().join(',');
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
 async function seed() {
-  notificationFloor = (await Notification.max('id')) || 0;
-
   const parent = await Parent.create({
     firstName: `${TAG}_Parent`, lastName: 'One',
     email: `${TAG.toLowerCase()}.parent@example.test`,
@@ -114,7 +125,16 @@ async function cleanup() {
     console.log('\n--keep given: leaving fixtures and notifications in place.');
     return;
   }
-  await Notification.destroy({ where: { id: { [Op.gt]: notificationFloor } } });
+  // Scope the delete to the fixture recipients. An id-range delete would also
+  // remove notifications real users received while this script was running.
+  const fixtureRecipients = [
+    ...created.students.map((r) => ({ userType: 'student', userId: r.id })),
+    ...created.parents.map((r) => ({ userType: 'parent', userId: r.id })),
+    ...created.teachers.map((r) => ({ userType: 'teacher', userId: r.id })),
+  ];
+  for (const who of fixtureRecipients) {
+    await Notification.destroy({ where: who });
+  }
   await ClassSessionStudent.destroy({ where: { sessionId: created.sessions.map((s) => s.id) } });
   for (const key of ['sessions', 'schedules', 'announcements', 'courseDetails', 'students', 'courses', 'teachers', 'parents']) {
     for (const row of created[key]) {
