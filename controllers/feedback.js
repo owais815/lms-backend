@@ -5,6 +5,7 @@ const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
 const Courses = require('../models/Course');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { sendEmailEvent } = require("../emails");
 
 // ---------------------------------------------------------------------------
 // Helper: compute average ratings from an array of SessionFeedback instances
@@ -63,6 +64,12 @@ const submitFeedback = async (req, res) => {
         message: `A student rated session "${session.title}" only ${overallRating}/5. This may need your attention.`,
         priority: 'warning',
       }).catch(() => {});
+      sendEmailEvent('feedback.low_rating', {
+        session,
+        rating: overallRating,
+        comment: req.body.comment || null,
+        entityId: session.id,
+      });
     }
 
     res.status(201).json({ message: 'Feedback submitted successfully', feedback });
