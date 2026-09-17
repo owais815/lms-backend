@@ -1,6 +1,7 @@
 
 
 const Payment = require('../models/Payment');
+const { notifyStudentAndParent } = require('../utils/notifyAudience');
 const Plan = require('../models/Plan');
 const PlanChangeRequest = require('../models/PlanChangeRequest');
 const Student = require('../models/Student');
@@ -130,6 +131,16 @@ exports.purchasePlan = async (req, res) => {
             purpose: 'Plan Purchase',
         });
 
+        const purchased = await Plan.findByPk(planId, { attributes: ['name'] });
+        await notifyStudentAndParent({
+            studentId,
+            title: 'Plan Activated',
+            message: `Your plan${purchased ? ` "${purchased.name}"` : ''} is now active. `
+                + `A payment of ${amount} has been recorded.`,
+            parentMessage: `Your child's plan${purchased ? ` "${purchased.name}"` : ''} is now active. `
+                + `A payment of ${amount} has been recorded.`,
+        });
+
         res.status(201).json({
             success: true,
             message: 'Plan purchased and payment recorded successfully.',
@@ -155,6 +166,14 @@ exports.assignPlan = async (req, res) => {
 
         student.planId = planId;
         await student.save();
+
+        const assigned = await Plan.findByPk(planId, { attributes: ['name'] });
+        await notifyStudentAndParent({
+            studentId,
+            title: 'Plan Updated',
+            message: `You have been moved to the${assigned ? ` "${assigned.name}"` : ''} plan.`,
+            parentMessage: `Your child has been moved to the${assigned ? ` "${assigned.name}"` : ''} plan.`,
+        });
 
         res.status(200).json({ success: true, message: 'Plan assigned successfully' });
     } catch (error) {
