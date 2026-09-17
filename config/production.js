@@ -3,6 +3,9 @@ const http = require("http");
 const fs = require("fs");
 const socketHandler = require("../socket");
 
+// Kept so app.js's SIGTERM handler can close the listener on shutdown.
+let activeServer = null;
+
 exports.startServer = (app) => {
   // HTTP → HTTPS redirect server
   http
@@ -33,4 +36,9 @@ exports.startServer = (app) => {
   // The connection handler is registered in app.js AFTER this returns,
   // so we do NOT attach any io.on('connection') here to avoid duplicates.
   socketHandler.init(server);
+
+  activeServer = server;
+  return server;
 };
+
+exports.getServer = () => activeServer;
