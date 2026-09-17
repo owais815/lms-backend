@@ -4,6 +4,7 @@ const EnrolledStudents = require("../models/EnrolledStudents");
 const Student = require("../models/Student");
 const Teacher = require("../models/Teacher");
 const UpcomingCourses = require("../models/UpcomingCourse");
+const { notifyStudentAndParent } = require('../utils/notifyAudience');
 
 // Create a new upcoming course schedule
 // A course can have multiple schedules (different teachers / dates)
@@ -134,6 +135,15 @@ exports.enrollStudent = async (req, res) => {
         teacherId: upcomingCourse.teacherId || null,
       });
     }
+
+    const course = await Courses.findByPk(courseId, { attributes: ['courseName'] });
+    const courseLabel = course ? `"${course.courseName}"` : 'the course';
+    await notifyStudentAndParent({
+      studentId,
+      title: 'Course Enrolment Confirmed',
+      message: `You are now enrolled in ${courseLabel}.`,
+      parentMessage: `Your child is now enrolled in ${courseLabel}.`,
+    });
 
     res.status(200).json({ message: "Student enrolled successfully" });
   } catch (error) {
