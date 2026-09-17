@@ -86,6 +86,16 @@ const PERMISSIONS = {
   // Salary Management
   SALARY_VIEW:   'salary:view',
   SALARY_MANAGE: 'salary:manage',
+
+  // Email Notifications
+  EMAIL_VIEW:   'email:view',    // read settings catalog + delivery status
+  EMAIL_MANAGE: 'email:manage',  // toggle events, edit branding/sender, set mode
+  EMAIL_LOGS:   'email:logs',    // browse the delivery log and preview messages
+  EMAIL_TEST:   'email:test',    // send a test email to an arbitrary address
+
+  // In-App Notifications
+  NOTIFICATIONS_VIEW:   'notifications:view',    // read the toggle catalog
+  NOTIFICATIONS_MANAGE: 'notifications:manage',  // switch events on/off, narrow audiences
 };
 
 // Roles that bypass all permission checks
