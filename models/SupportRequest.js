@@ -3,6 +3,7 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../utils/database'); // Your Sequelize instance
 const Teacher = require('./Teacher');
 const Student = require('./Student');
+const Parent = require('./Parent');
 
 const SupportRequest = sequelize.define('SupportRequest', {
   id: {
@@ -23,7 +24,7 @@ const SupportRequest = sequelize.define('SupportRequest', {
     allowNull: false,
   },
   userType: {
-    type: DataTypes.ENUM('student', 'teacher'),
+    type: DataTypes.ENUM('student', 'teacher', 'parent'),
     allowNull: false,
   },
   priority: {
@@ -41,4 +42,5 @@ const SupportRequest = sequelize.define('SupportRequest', {
 });
 SupportRequest.belongsTo(Student, { foreignKey: 'userId', constraints: false, as: 'student' });
 SupportRequest.belongsTo(Teacher, { foreignKey: 'userId', constraints: false, as: 'teacher' });
+SupportRequest.belongsTo(Parent, { foreignKey: 'userId', constraints: false, as: 'parent' });
 module.exports = SupportRequest;
