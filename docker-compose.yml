@@ -14,5 +14,31 @@ services:
       - mysql_data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
 
+  # Local SMTP sink for testing email end to end.
+  #   SMTP_HOST=127.0.0.1 SMTP_PORT=1025 SMTP_SECURE=false EMAIL_MODE=live
+  # then read everything at http://localhost:8025 -- HTML, plaintext, source and
+  # a spam-score check, with nothing leaving the machine.
+  #
+  # Worth having even though EMAIL_MODE=log exists: log mode never opens a
+  # socket, so it does not exercise the real nodemailer path.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: lms-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # web UI
+
+  # Optional. Set REDIS_URL=redis://127.0.0.1:6379 to switch the email queue
+  # from the MySQL driver to BullMQ. Nothing else changes -- no code, no schema.
+  redis:
+    image: redis:7-alpine
+    container_name: lms-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    profiles:
+      - redis
+
 volumes:
   mysql_data:
