@@ -16,6 +16,13 @@ const Admin = sequelize.define('Admin', {
         type: Sequelize.STRING,
         allowNull: false
     },
+    // Nullable: existing rows have no address, so NOT NULL would fail the alter.
+    // Uniqueness is added later in raw SQL once the data is clean -- never via
+    // `unique: true`, which alter-sync duplicates on every boot.
+    email: {
+        type: Sequelize.STRING,
+        allowNull: true
+    },
     password: {
         type: Sequelize.STRING,
         allowNull: false
