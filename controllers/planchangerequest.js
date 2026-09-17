@@ -4,6 +4,8 @@ const PlanChangeRequest = require('../models/PlanChangeRequest');
 const Student = require('../models/Student');
 const Fee = require('../models/Fee');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { notifyStudentAndParent } = require('../utils/notifyAudience');
+const { sendEmailEvent } = require('../emails');
 
 // ── Student: Submit a plan change request ────────────────────────────────────
 
@@ -40,6 +42,7 @@ exports.requestPlanChange = async (req, res) => {
             message: `${studentName} has requested a plan upgrade${requestedPlan ? ` to "${requestedPlan.name}"` : ''}. Please review the Fees section.`,
             priority: 'info',
         }).catch(() => {});
+        sendEmailEvent('plan_change.requested', { request, requestedPlan, studentId: request.studentId });
 
         res.status(201).json({ success: true, message: 'Plan change request submitted.', request });
     } catch (error) {
@@ -105,6 +108,17 @@ exports.approvePlanChangeRequest = async (req, res) => {
         request.status = 'approved';
         await request.save();
 
+        await notifyStudentAndParent({
+            studentId: request.studentId,
+            title: `Plan Upgrade Approved: ${requestedPlan.name}`,
+            message: `Your upgrade to "${requestedPlan.name}" was approved. A fee of ${requestedPlan.price} is due by `
+                + `${dueDate.toISOString().split('T')[0]} — your new plan activates once payment is confirmed.`,
+            parentMessage: `The upgrade to "${requestedPlan.name}" was approved. A fee of ${requestedPlan.price} is due by `
+                + `${dueDate.toISOString().split('T')[0]} — the new plan activates once payment is confirmed.`,
+            emailEvent: 'plan_change.approved',
+            emailContext: { request, requestedPlan },
+        });
+
         res.json({ success: true, message: 'Plan change approved. Fee created — plan will update once payment is confirmed.' });
     } catch (error) {
         console.error(error);
@@ -124,6 +138,18 @@ exports.rejectPlanChangeRequest = async (req, res) => {
 
         request.status = 'rejected';
         await request.save();
+
+        const rejectedPlan = await Plan.findByPk(request.requestedPlanId, { attributes: ['name'] });
+        const planLabel = rejectedPlan ? `"${rejectedPlan.name}"` : 'the requested plan';
+        await notifyStudentAndParent({
+            studentId: request.studentId,
+            title: 'Plan Upgrade Rejected',
+            message: `Your request to upgrade to ${planLabel} was not approved. Contact support if you have questions.`,
+            parentMessage: `The request to upgrade to ${planLabel} was not approved. Contact support if you have questions.`,
+            priority: 'warning',
+            emailEvent: 'plan_change.rejected',
+            emailContext: { request, requestedPlan: { name: planLabel } },
+        });
 
         res.json({ success: true, message: 'Plan change request rejected.' });
     } catch (error) {
