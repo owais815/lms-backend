@@ -68,6 +68,9 @@ router.get('/sessions/:sessionId', isAuth, ctrl.getSession);
 // Admin: approve a teacher proposal  (wildcard /:id — keep after specific paths)
 router.put('/:id/approve', isAuth, checkPermission(PERMISSIONS.SCHEDULE_MANAGE), ctrl.approveSchedule);
 
+// Admin: reject a teacher proposal
+router.put('/:id/reject', isAuth, checkPermission(PERMISSIONS.SCHEDULE_MANAGE), ctrl.rejectSchedule);
+
 // Admin: cancel entire schedule + all future sessions
 router.put('/:id/cancel', isAuth, ctrl.cancelSchedule);
 
