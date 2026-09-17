@@ -3,6 +3,8 @@ const { Op,Sequelize } = require('sequelize');
 const UpcomingClass = require("../models/UpcomingClasses");
 const Student = require("../models/Student");
 const Teacher = require("../models/Teacher");
+const notifyAdmins = require("../utils/notifyAdmins");
+const { displayName } = require("../utils/notifyAudience");
 
 exports.submitSurvey = async(req, res, next) => {
     try {
@@ -27,6 +29,23 @@ exports.submitSurvey = async(req, res, next) => {
           completed: true
         });
   
+        // Mirrors the low-rating alert in feedback.js: poor scores need a human.
+        const scores = [classRating, lessonRating, teacherRating]
+          .map(Number)
+          .filter((n) => Number.isFinite(n));
+        const lowest = scores.length ? Math.min(...scores) : null;
+        if (lowest !== null && lowest <= 2) {
+          const student = await Student.findByPk(studentId, {
+            attributes: ['firstName', 'lastName'],
+          });
+          await notifyAdmins({
+            title: 'Low Survey Rating Alert',
+            message: `${displayName(student, 'A student')} submitted a survey with a rating of `
+              + `${lowest}/5. This may need your attention.`,
+            priority: 'warning',
+          });
+        }
+
         res.status(201).json({
           success: true,
           data: survey
