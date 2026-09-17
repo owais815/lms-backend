@@ -87,6 +87,13 @@ const ClassSession = sequelize.define('ClassSession', {
     allowNull: true,
     defaultValue: null,
   },
+  // Set when the "class starting soon" reminder goes out; nulled on reschedule
+  // so the reminder fires again for the new time.
+  reminderSentAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    defaultValue: null,
+  },
   shift: {
     type: DataTypes.ENUM('Morning', 'Afternoon', 'Evening'),
     allowNull: true,
