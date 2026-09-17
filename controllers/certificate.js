@@ -3,10 +3,12 @@ const Certificate = require('../models/Certificate');
 const Student = require('../models/Student');
 const Courses = require('../models/Course');
 const notifyAdmins = require('../utils/notifyAdmins');
+const { sendEmailEvent } = require("../emails");
+const { notifyStudentAndParent, notifyStudentsAndParents, displayName } = require('../utils/notifyAudience');
 
 // Shared include for full certificate details
 const fullInclude = [
-    { model: Student, attributes: ['id', 'firstName', 'lastName', 'email', 'profileImg'] },
+    { model: Student, attributes: ['id', 'firstName', 'lastName', 'email', 'profileImg', 'parentId'] },
     { model: Courses, attributes: ['id', 'courseName', 'duration'] },
 ];
 
@@ -54,6 +56,17 @@ const createCertificate = async (req, res) => {
 
         const full = await Certificate.findByPk(certificate.id, { include: fullInclude });
 
+        if (certStatus === 'issued') {
+            await notifyStudentAndParent({
+                studentId,
+                title: 'Certificate Issued',
+                message: `Your certificate for "${course.courseName}" has been issued.`,
+                parentMessage: `Your child's certificate for "${course.courseName}" has been issued.`,
+                emailEvent: 'certificate.issued',
+                emailContext: { certificate, course },
+            });
+        }
+
         const msg = certStatus === 'upcoming' ? 'Upcoming certificate created.' : 'Certificate issued successfully.';
         res.status(201).json({ message: msg, certificate: full });
     } catch (err) {
@@ -80,6 +93,16 @@ const issueCertificateFromUpcoming = async (req, res) => {
         await cert.save();
 
         const full = await Certificate.findByPk(id, { include: fullInclude });
+
+        await notifyStudentAndParent({
+            studentId: cert.studentId,
+            title: 'Certificate Issued',
+            message: `Your certificate for "${full?.Course?.courseName || 'your course'}" has been issued.`,
+            parentMessage: `Your child's certificate for "${full?.Course?.courseName || 'their course'}" has been issued.`,
+            emailEvent: 'certificate.issued',
+            emailContext: { certificate: cert, course: full && full.Course },
+        });
+
         res.json({ message: 'Certificate issued successfully.', certificate: full });
     } catch (err) {
         console.error('[issueCertificateFromUpcoming]', err);
@@ -172,12 +195,27 @@ const revokeCertificate = async (req, res) => {
         cert.status = 'revoked';
         await cert.save();
 
+        const holder = await Student.findByPk(cert.studentId, {
+            attributes: ['id', 'firstName', 'lastName', 'parentId'],
+        });
+
         // Audit: notify all admins when a certificate is revoked
         notifyAdmins({
             title: 'Certificate Revoked',
-            message: `Certificate #${cert.id} for Student #${cert.studentId} (Course #${cert.courseId}) was revoked. Performed by admin.`,
+            message: `Certificate #${cert.id} for ${displayName(holder, `Student #${cert.studentId}`)} `
+                + `(Course #${cert.courseId}) was revoked. Performed by admin.`,
             priority: 'warning',
         }).catch(() => {});
+
+        await notifyStudentAndParent({
+            studentId: cert.studentId,
+            title: 'Certificate Revoked',
+            message: 'One of your certificates has been revoked. Contact support if you have questions.',
+            parentMessage: "One of your child's certificates has been revoked. Contact support if you have questions.",
+            priority: 'warning',
+            emailEvent: 'certificate.revoked',
+            emailContext: { certificate: cert },
+        });
 
         res.json({ message: 'Certificate revoked.' });
     } catch (err) {
@@ -201,6 +239,13 @@ const restoreCertificate = async (req, res) => {
 
         cert.status = 'issued';
         await cert.save();
+
+        await notifyStudentAndParent({
+            studentId: cert.studentId,
+            title: 'Certificate Restored',
+            message: 'A previously revoked certificate of yours has been restored.',
+            parentMessage: 'A previously revoked certificate has been restored.',
+        });
 
         res.json({ message: 'Certificate restored successfully.' });
     } catch (err) {
@@ -274,6 +319,20 @@ const bulkCreateCertificates = async (req, res) => {
 
             const full = await Certificate.findByPk(certificate.id, { include: fullInclude });
             created.push(full);
+        }
+
+        if (certStatus === 'issued' && created.length > 0) {
+            await notifyStudentsAndParents({
+                students: created.map((c) => c.Student).filter(Boolean),
+                title: 'Certificate Issued',
+                message: `Your certificate for "${course.courseName}" has been issued.`,
+                parentMessage: `Your child's certificate for "${course.courseName}" has been issued.`,
+            });
+            // One summary for admins, not one per student.
+            await notifyAdmins({
+                title: 'Certificates Issued',
+                message: `${created.length} certificate(s) issued for "${course.courseName}".`,
+            });
         }
 
         res.status(201).json({
