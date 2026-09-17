@@ -11,6 +11,10 @@ const { Quiz, QuizAttempt, CourseDetails, Courses } = require("../models/associa
 const Question = require("../models/Quiz/Question");
 const { Op } = require("sequelize");
 const notify = require("../utils/notify");
+const {
+  notifyStudentsAndParents,
+  notifyStudentAndParent,
+} = require("../utils/notifyAudience");
 
 exports.createQuiz = async (req, res, next) => {
   try {
@@ -64,17 +68,16 @@ exports.createQuiz = async (req, res, next) => {
           })
         )
       );
+      sendEmailEvent('approval.quiz_pending', { quiz: created[0], teacher });
     } else {
-      await Promise.all(
-        courseDetailsList.map((cd) =>
-          notify({
-            userId: cd.studentId,
-            userType: 'student',
-            title: 'New Quiz Available',
-            message: `A new quiz "${title}" has been assigned to you.`,
-          })
-        )
-      );
+      await notifyStudentsAndParents({
+        studentIds: courseDetailsList.map((cd) => cd.studentId),
+        title: 'New Quiz Available',
+        message: `A new quiz "${title}" has been assigned to you.`,
+        parentMessage: `A new quiz "${title}" has been assigned to your child.`,
+        emailEvent: 'quiz.published',
+        emailContext: { quiz: created[0], courseId: created[0] && created[0].courseId },
+      });
     }
 
     // Return the first quiz (all share the same content)
@@ -252,7 +255,52 @@ exports.submitQuizAttempt = async (req, res, next) => {
       score: finalScore,
       endTime
     });
-    
+
+    // Mirrors the assignment-submission flow: the teacher learns it was taken,
+    // the student and parent learn the result.
+    try {
+      const quiz = quizAttempt.Quiz;
+      const rounded = Math.round(finalScore);
+      const passed = quiz.passingScore != null ? finalScore >= quiz.passingScore : null;
+      const outcome = passed === null ? '' : passed ? ' — passed.' : ' — did not pass.';
+
+      if (quiz.teacherId) {
+        await notify({
+          userId: quiz.teacherId,
+          userType: 'teacher',
+          title: 'Quiz Submitted',
+          message: `A student completed the quiz "${quiz.title}" and scored ${rounded}%.`,
+        });
+      }
+
+      if (quizAttempt.studentId) {
+        await notifyStudentAndParent({
+          studentId: quizAttempt.studentId,
+          title: 'Quiz Result',
+          message: `You scored ${rounded}% on the quiz "${quiz.title}"${outcome}`,
+          parentMessage: `Your child scored ${rounded}% on the quiz "${quiz.title}"${outcome}`,
+          emailEvent: 'quiz.graded',
+          emailContext: { quiz, score: rounded, attempt: quizAttempt, entityId: quizAttempt.id },
+        });
+
+        // A separate event, so admins can alert on weak results without having
+        // to turn on an email for every quiz anyone completes.
+        const lowScoreCfg = require('../emails').settings.forEvent('quiz.low_score');
+        const threshold = (lowScoreCfg && lowScoreCfg.config && lowScoreCfg.config.thresholdPercent) || 50;
+        if (rounded < threshold) {
+          sendEmailEvent('quiz.low_score', {
+            quiz,
+            score: rounded,
+            studentId: quizAttempt.studentId,
+            teacherId: quiz.teacherId,
+            entityId: quizAttempt.id,
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
+    }
+
     res.json(quizAttempt);
   } catch (error) {
     console.error("Error in submitQuizAttempt:", error);
@@ -501,17 +549,18 @@ exports.approveQuizGroup = async (req, res, next) => {
       title: 'Quiz Approved',
       message: `Your quiz "${sourceQuiz.title}" has been approved and is now visible to students.`,
     });
-    // Notify each student
-    await Promise.all(
-      siblings.map((q) =>
-        notify({
-          userId: q.studentId,
-          userType: 'student',
-          title: 'New Quiz Available',
-          message: `A new quiz "${sourceQuiz.title}" has been assigned to you.`,
-        })
-      )
-    );
+    sendEmailEvent('approval.quiz_decided', {
+      quiz: sourceQuiz, approved: true, teacherId: sourceQuiz.teacherId,
+    });
+    // Notify each student + their parent
+    await notifyStudentsAndParents({
+      studentIds: siblings.map((q) => q.studentId),
+      title: 'New Quiz Available',
+      message: `A new quiz "${sourceQuiz.title}" has been assigned to you.`,
+      parentMessage: `A new quiz "${sourceQuiz.title}" has been assigned to your child.`,
+      emailEvent: 'quiz.published',
+      emailContext: { quiz: sourceQuiz },
+    });
 
     res.status(200).json({ message: 'Quiz approved', count: siblings.length });
   } catch (error) {
@@ -537,6 +586,9 @@ exports.rejectQuizGroup = async (req, res, next) => {
       userType: 'teacher',
       title: 'Quiz Rejected',
       message: `Your quiz "${sourceQuiz.title}" was not approved. Please review and resubmit.`,
+    });
+    sendEmailEvent('approval.quiz_decided', {
+      quiz: sourceQuiz, approved: false, teacherId: sourceQuiz.teacherId,
     });
 
     res.status(200).json({ message: 'Quiz rejected', count: siblings.length });
