@@ -3,6 +3,8 @@ const Fee = require('../models/Fee');
 const AutoPayMethod = require('../models/AutoPayMethod');
 const Student = require('../models/Student');
 const notify = require('../utils/notify');
+const { sendEmailEvent } = require("../emails");
+const { notifyStudentAndParent } = require('../utils/notifyAudience');
 const { attemptCharge, deactivateAutoPay } = require('../controllers/autoPay');
 
 /**
@@ -29,12 +31,28 @@ function startAutoChargeFeesCron() {
                 if (!method) continue;
                 const result = await attemptCharge(fee, method);
                 if (!result.ok) {
-                    await notify({
-                        userId: fee.studentId,
-                        userType: 'student',
-                        title: 'Auto-Pay Reminder',
-                        message: `We'll retry your card on file for "${fee.title}" — no action needed unless it fails again.`,
-                    });
+                    // This runs daily for as long as the fee stays pending, so only
+                    // the first failure reaches the parent. Later retries stay with
+                    // the student until deactivateAutoPay escalates.
+                    const firstFailure = fee.proofStatus === 'none' && !fee.dueReminderSentAt;
+                    if (firstFailure) {
+                        await notifyStudentAndParent({
+                            studentId: fee.studentId,
+                            title: 'Auto-Pay Reminder',
+                            message: `We'll retry your card on file for "${fee.title}" — no action needed unless it fails again.`,
+                            parentMessage: `We'll retry the card on file for "${fee.title}" — no action needed unless it fails again.`,
+                            emailEvent: 'autopay.charge_failed',
+                            emailContext: { fee },
+                            emailOptions: { occurredAt: new Date() },
+                        });
+                    } else {
+                        await notify({
+                            userId: fee.studentId,
+                            userType: 'student',
+                            title: 'Auto-Pay Reminder',
+                            message: `We'll retry your card on file for "${fee.title}" — no action needed unless it fails again.`,
+                        });
+                    }
                 }
             }
 
