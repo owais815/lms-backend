@@ -11,6 +11,8 @@ const CourseDetails = require("../models/CourseDetails");
 const Courses = require("../models/Course");
 const { Sequelize, where } = require("sequelize");
 const notify = require("../utils/notify");
+const { sendEmailEvent } = require("../emails");
+const { notifyStudentAndParent } = require("../utils/notifyAudience");
 
 
 
@@ -421,6 +423,23 @@ exports.completeCourse = async (req, res, next) => {
         userType: 'teacher',
         title: 'Course Complete',
         message: `${courseName} has been marked complete and shared as finished.`,
+      });
+    }
+
+    // Finishing a course is the family-facing milestone, not just a teacher
+    // bookkeeping step.
+    if (courseDetail.studentId) {
+      await notifyStudentAndParent({
+        studentId: courseDetail.studentId,
+        title: 'Course Complete',
+        message: `You have completed ${courseName}. Well done!`,
+        parentMessage: `Your child has completed ${courseName}.`,
+        emailEvent: 'course.completed',
+        emailContext: {
+          course: courseDetail.Course,
+          teacherId: courseDetail.teacherId,
+          courseDetail,
+        },
       });
     }
 
