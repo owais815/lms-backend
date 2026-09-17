@@ -3,6 +3,12 @@ const Student = require("../models/Student");
 const { Quiz, QuizAttempt, CourseDetails, Assignment, SubmittedAssignment, Courses } = require("../models/association");
 const Admin = require("../models/Admin");
 const notify = require("../utils/notify");
+const { sendEmailEvent } = require("../emails");
+const {
+  notifyStudentsAndParents,
+  notifyStudentAndParent,
+  displayName,
+} = require("../utils/notifyAudience");
 const fs = require('fs').promises;
 const path = require('path');
 
@@ -48,17 +54,15 @@ exports.createAssignment = async (req, res, next) => {
         )
       );
       // Notify each student of new assignment
-      const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Your teacher';
-      await Promise.all(
-        courseDetailsList.map((cd) =>
-          notify({
-            userId: cd.studentId,
-            userType: 'student',
-            title: 'New Assignment',
-            message: `${teacherName} published a new assignment: "${title}".`,
-          })
-        )
-      );
+      const teacherName = displayName(teacher, 'Your teacher');
+      await notifyStudentsAndParents({
+        studentIds: courseDetailsList.map((cd) => cd.studentId),
+        title: 'New Assignment',
+        message: `${teacherName} published a new assignment: "${title}".`,
+        parentMessage: `${teacherName} published a new assignment for your child: "${title}".`,
+        emailEvent: 'assignment.published',
+        emailContext: { assignment, teacher, courseId: assignment.courseId },
+      });
     } else {
       // Notify all admins of pending assignment awaiting approval
       const admins = await Admin.findAll({ attributes: ['id'] });
@@ -73,6 +77,7 @@ exports.createAssignment = async (req, res, next) => {
           })
         )
       );
+      sendEmailEvent('approval.assignment_pending', { assignment, teacher });
     }
 
     res.status(201).json({ message: 'Assignment created and assigned to all students', assignment });
@@ -94,7 +99,11 @@ exports.updateAssignment = async (req, res, next) => {
     const updates = {};
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
-    if (dueDate !== undefined) updates.dueDate = dueDate;
+    if (dueDate !== undefined) {
+      updates.dueDate = dueDate;
+      // A moved deadline is a new deadline — let the due-soon reminder fire again.
+      if (String(dueDate) !== String(assignment.dueDate)) updates.dueReminderSentAt = null;
+    }
     if (maxScore !== undefined) updates.maxScore = maxScore;
     if (req.file) updates.fileUrl = `/resources/${req.file.filename}`;
     // If rejected, resubmitting goes back to pending
@@ -148,17 +157,18 @@ exports.approveAssignment = async (req, res, next) => {
         title: 'Assignment Approved',
         message: `Your assignment "${assignment.title}" has been approved and is now visible to students.`,
       });
-      // Notify all students
-      await Promise.all(
-        courseDetailsList.map((cd) =>
-          notify({
-            userId: cd.studentId,
-            userType: 'student',
-            title: 'New Assignment',
-            message: `A new assignment "${assignment.title}" has been published for your course.`,
-          })
-        )
-      );
+      sendEmailEvent('approval.assignment_decided', {
+        assignment, approved: true, teacherId: assignment.teacherId,
+      });
+      // Notify all students + parents
+      await notifyStudentsAndParents({
+        studentIds: courseDetailsList.map((cd) => cd.studentId),
+        title: 'New Assignment',
+        message: `A new assignment "${assignment.title}" has been published for your course.`,
+        parentMessage: `A new assignment "${assignment.title}" has been published for your child's course.`,
+        emailEvent: 'assignment.published',
+        emailContext: { assignment, courseId: assignment.courseId },
+      });
     }
 
     res.status(200).json({ message: 'Assignment approved', assignment });
@@ -180,6 +190,9 @@ exports.rejectAssignment = async (req, res, next) => {
       userType: 'teacher',
       title: 'Assignment Rejected',
       message: `Your assignment "${assignment.title}" was not approved. Please review and resubmit.`,
+    });
+    sendEmailEvent('approval.assignment_decided', {
+      assignment, approved: false, teacherId: assignment.teacherId,
     });
     res.status(200).json({ message: 'Assignment rejected', assignment });
   } catch (error) {
@@ -233,6 +246,12 @@ exports.submitAssignment = async (req, res, next) => {
       title: 'Assignment Submitted',
       message: `A student submitted their assignment. Check the submissions panel.`,
     });
+    sendEmailEvent('assignment.submitted', {
+      assignment: { id: submittedAssignment.assignmentId },
+      teacherId: submittedAssignment.teacherId,
+      studentId: submittedAssignment.studentId,
+      entityId: submittedAssignment.id,
+    });
 
     res.status(200).json({ message: 'Assignment submitted successfully', submittedAssignment });
   } catch (error) {
@@ -254,12 +273,18 @@ exports.gradeAssignment = async (req, res, next) => {
     submittedAssignment.status = 'Graded';
     await submittedAssignment.save();
 
-    // Notify student of grade
-    notify({
-      userId: submittedAssignment.studentId,
-      userType: 'student',
+    // Notify student + parent of the grade
+    await notifyStudentAndParent({
+      studentId: submittedAssignment.studentId,
       title: 'Assignment Graded',
       message: `Your assignment has been graded. You scored ${score} point${score !== 1 ? 's' : ''}.`,
+      parentMessage: `Your child's assignment has been graded — ${score} point${score !== 1 ? 's' : ''}.`,
+      emailEvent: 'assignment.graded',
+      emailContext: {
+        assignment: { id: submittedAssignment.assignmentId, title: 'your assignment' },
+        score,
+        entityId: submittedAssignment.id,
+      },
     });
 
     res.status(200).json({ message: 'Assignment graded successfully', submittedAssignment });
