@@ -51,6 +51,7 @@ const EmailSetting = require("./EmailSetting");
 const EmailEventSetting = require("./EmailEventSetting");
 const EmailSettingsMeta = require("./EmailSettingsMeta");
 const EmailSuppression = require("./EmailSuppression");
+const PasswordResetToken = require("./PasswordResetToken");
 
 // In-app notification settings. NotificationSettingsMeta is only ever touched by
 // raw SQL (notifications/settings/seed.js and store.js), so this require is the
