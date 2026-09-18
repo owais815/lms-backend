@@ -43,6 +43,7 @@ const leaveRoutes = require("./routes/leave");
 const autoPayRoutes = require("./routes/autoPay");
 const emailSettingsRoutes = require("./routes/emailSettings");
 const emailLogRoutes = require("./routes/emailLogs");
+const passwordResetRoutes = require("./routes/passwordReset");
 
 const cleanupAnnouncements = require('./Schedular/Cleanupannouncements');
 const { startMessageCleanup } = require('./Schedular/cleanupMessages');
@@ -51,6 +52,7 @@ const { startAutoEndSessionsCron } = require('./Schedular/autoEndSessions');
 const { startOverdueSalariesCron } = require('./Schedular/markOverdueSalaries');
 const { startTeacherNoShowCron } = require('./Schedular/teacherNoShow');
 const { startStaleApprovalsCron } = require('./Schedular/staleApprovals');
+const { startResetTokenCleanup } = require('./Schedular/cleanupResetTokens');
 const { startAutoChargeFeesCron } = require('./Schedular/autoChargeFees');
 const { startMissingLessonsCron } = require('./Schedular/checkMissingLessons');
 const { startClassRemindersCron } = require('./Schedular/classReminders');
@@ -218,6 +220,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/notification-settings", notificationSettingsRoutes);
 app.use("/api/email-settings", emailSettingsRoutes);
 app.use("/api/email-logs", emailLogRoutes);
+// Public: someone who cannot sign in cannot present a token.
+app.use("/api/auth", passwordResetRoutes);
 app.use("/api/teacher-attendance", teacherAttendanceRoutes);
 app.use("/api/session-feedback", sessionFeedbackRoutes);
 app.use("/api/fees", feesRoutes);
@@ -369,6 +373,7 @@ sequelize
     startOverdueSalariesCron();
     startTeacherNoShowCron();
     startStaleApprovalsCron();
+    startResetTokenCleanup();
     startClassRemindersCron();
     startDueSoonRemindersCron();
     startAnnouncementNotifierCron();
