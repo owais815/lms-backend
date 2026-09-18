@@ -19,7 +19,8 @@
     "check:gate": "node scripts/check-notification-gate.js",
     "email:check": "node scripts/check-email-wiring.js",
     "email:test": "node scripts/test-email-pipeline.js",
-    "email:units": "node scripts/test-email-units.js"
+    "email:units": "node scripts/test-email-units.js",
+    "email:send-samples": "node scripts/send-sample-emails.js"
   },
   "author": "",
   "license": "ISC",
