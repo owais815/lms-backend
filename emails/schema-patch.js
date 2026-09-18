@@ -44,6 +44,12 @@ const STATEMENTS = [
     "CREATE INDEX `idx_emailjob_lease` ON `EmailJobs` (`leaseExpiresAt`)",
 
     "CREATE UNIQUE INDEX `uq_suppression_email` ON `EmailSuppressions` (`email`)",
+
+    // Password reset tokens. The lookup is always by hash, and expired rows are
+    // pruned by date.
+    "CREATE UNIQUE INDEX `uq_reset_token` ON `PasswordResetTokens` (`tokenHash`)",
+    "CREATE INDEX `idx_reset_user` ON `PasswordResetTokens` (`userType`, `userId`, `usedAt`)",
+    "CREATE INDEX `idx_reset_expiry` ON `PasswordResetTokens` (`expiresAt`)",
 ];
 
 /**
