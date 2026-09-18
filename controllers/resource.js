@@ -5,6 +5,7 @@ const path = require('path');
 const Courses = require('../models/Course');
 const fs = require('fs').promises;
 const { notifyStudentAndParent } = require('../utils/notifyAudience');
+const { sendEmailEvent } = require("../emails");
 
 exports.uploadResource = async (req, res,next) => {
 
@@ -29,6 +30,12 @@ exports.uploadResource = async (req, res,next) => {
         title: 'New Resource Shared',
         message: `A new resource "${originalFilename}" has been shared with you.`,
         parentMessage: `A new resource "${originalFilename}" has been shared with your child.`,
+        emailEvent: 'resource.shared',
+        emailContext: {
+          resource: { id: resource.id, title: originalFilename },
+          courseId,
+          teacherId,
+        },
       });
     }
 
