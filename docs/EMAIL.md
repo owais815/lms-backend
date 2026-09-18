@@ -224,10 +224,44 @@ rewrites `.env` wholesale, so one rotation point is better than two.
 | `EMAIL_WORKER_EMBEDDED` | `true` runs the worker in the API process (dev only) |
 | `REDIS_URL` | Unset = MySQL queue. Setting it switches to BullMQ. |
 | `DB_POOL_MAX` | 15 for the API, 6 for the worker |
+| `PASSWORD_RESET_TTL_MINUTES` | Reset link lifetime, default 60 |
+| `PASSWORD_RESET_RETAIN_DAYS` | How long spent tokens are kept before pruning, default 7 |
 
 **Both GitHub workflows heredoc-write the entire `.env`.** A key missing from
 the workflow silently disappears from production on the next push. This is the
 most likely way this feature breaks on deploy.
+
+---
+
+## Password reset
+
+This flow did not exist before — every forgotten password was an admin ticket,
+and `account.password_reset_requested` had nothing to fire it.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/auth/forgot-password` | Request a link. Rate limited to 5 per IP per 15 min. |
+| `GET /api/auth/reset-password/verify?token=` | Check a link before showing the form |
+| `POST /api/auth/reset-password` | Set the new password |
+
+Pages: `/forgot-password` and `/reset-password` in the admin app, linked from
+the login form.
+
+Decisions worth knowing:
+
+- **Only a SHA-256 hash of the token is stored.** A database dump or a stray log
+  line contains nothing an attacker can use.
+- **The request endpoint always returns the same response**, whether or not the
+  address exists. Otherwise it is an oracle for enumerating which students and
+  parents have accounts.
+- **Tokens are single-use and expire in an hour.** Issuing a new one kills every
+  outstanding token for that account, and so does spending one.
+- **The token is spent before the password is written.** If the update then
+  fails the user requests a fresh link; the other ordering could leave a spent
+  token usable.
+- **Rate limiting is keyed on IP, not on the submitted address.** Keying on the
+  address would let an attacker lock a specific victim out of the reset flow.
+- Spent and expired tokens are pruned nightly by `Schedular/cleanupResetTokens.js`.
 
 ---
 
@@ -256,10 +290,14 @@ then on. Remove an address from the list in the settings API if it was wrong.
 
 ## Known gaps
 
-- **8 registry events have no call site**, because the flows do not exist yet:
-  password reset, credential reissue and email change have no endpoints in this
-  codebase; `expense.*` and `resource.shared` have no notification points today.
-  They are defined and templated, ready for when those flows are built.
+- **5 registry events have no call site**, because the flows do not exist:
+  `expense.approved` / `expense.rejected` (the expense controller is CRUD with
+  no approval step), `account.credentials_reissued` (the admin password
+  endpoints deliberately send `password_changed` instead — emailing a plaintext
+  password an admin chose is worse than making them communicate it),
+  `account.email_changed` (no endpoint tracks an old/new address pair), and
+  `class.starting_late` (the teacher no-show cron already covers it). All are
+  defined and templated, ready for when those flows exist.
 - **Open and bounce tracking** columns exist but are not populated. Plain SMTP
   gives no webhooks; this needs either an IMAP bounce poller or a provider that
   offers them. Open-tracking pixels are deliberately not implemented —
