@@ -1,4 +1,5 @@
 const Expense = require('../models/Expense');
+const { sendEmailEvent } = require('../emails');
 const ExpenseCategory = require('../models/ExpenseCategory');
 const Loss = require('../models/Loss');
 const Admin = require('../models/Admin');
@@ -100,6 +101,10 @@ exports.createExpense = async (req, res) => {
         const full = await Expense.findByPk(expense.id, {
             include: [{ model: ExpenseCategory, as: 'Category', attributes: ['id', 'name'] }],
         });
+        sendEmailEvent('expense.submitted', {
+            expense: { id: expense.id, title, amount },
+        }, { occurredAt: new Date() });
+
         res.status(201).json({ success: true, expense: full });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
